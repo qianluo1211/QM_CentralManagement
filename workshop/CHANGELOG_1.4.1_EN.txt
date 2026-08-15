@@ -1,0 +1,7 @@
+[h1]Central Material Management 1.4.1 Hotfix — Augmentation-Screen Fit + Full Pre-Departure Preset Apply[/h1]
+
+[list]
+[*]The pre-departure preset bar now hides automatically on the augmentation screen — no more offsetting the equipment UI.
+[*]The pre-departure one-click preset apply now also equips augmentations / mechanical limbs, with the same missing / locked / augmentation-department validation.
+[*]Preset save & apply popup wording unified with the central panel.
+[/list]

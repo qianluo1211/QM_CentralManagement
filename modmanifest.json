@@ -1,0 +1,14 @@
+{
+  "UniqueModName": "QM_CentralManagement",
+  "Assemblies": [
+    "QM_CentralManagement.dll"
+  ],
+  "Dependencies": [],
+  "SteamTags": [
+    "1.0",
+    "1.0.1",
+    "Quality of Life",
+    "UI",
+    "Utility"
+  ]
+}

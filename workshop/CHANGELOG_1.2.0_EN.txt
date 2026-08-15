@@ -1,0 +1,10 @@
+[h1]Central Material Management 1.2.0[/h1]
+
+[list]
+[*]Added named complete loadout presets.
+[*]Presets now save equipped gear, exact backpack and vest contents, mechanical replacement parts, implant socket capacity, and installed implants.
+[*]Added safe force-apply when only items are missing. Missing normal gear slots remain empty, unavailable carried items are skipped, and incomplete body presets keep the current body intact.
+[*]Added vanilla button, equip-weapon, and take-item audio feedback throughout the central-management workflow.
+[*]Improved fragmented stack merging while restoring carried ammunition and supplies.
+[*]Kept old presets compatible; legacy presets never clear carried inventory that they did not record.
+[/list]

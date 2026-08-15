@@ -1,0 +1,13 @@
+[h1]1.0.0 — Initial Release[/h1]
+
+[list]
+[*]Added the major Central Logistics Matrix technology and spaceship action.
+[*]Added ship-wide inventory aggregation, search, layered filters, paging, and responsive full-screen layouts.
+[*]Added direct agent selection, two-way equipment/backpack drag-and-drop, and vanilla stack-split handoff.
+[*]Added equipment resistance, weapon/ammo damage, official armor-set, and augment-slot sorting/filtering.
+[*]Added a central augmentation workflow that reuses the original body screen and installation rules.
+[*]Added unit-precise batch recycling with filtered selection, confirmation, and safety exclusions.
+[*]Fixed reopening central management after returning from Augmentation incorrectly forcing the Augments category.
+[*]Fixed click-through, category-row flicker, and item-slot hover displacement around overlays and dropdowns.
+[/list]
+

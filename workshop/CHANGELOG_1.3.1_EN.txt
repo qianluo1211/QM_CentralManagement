@@ -1,0 +1,14 @@
+[h1]Central Material Management 1.3.1 — Fixed the Augmentation Screen Not Refreshing After Fitting Limbs[/h1]
+
+[h2]Fixes[/h2]
+[list]
+[*]Fixed the augmentation body diagram and catalog counts not updating after installing whole-arm / leg mechanical limbs from the central panel. Previously only implant installations refreshed the interface.
+[*]Fixed a possible null-reference exception during limb installation that aborted the install after the data was written: the install now completes fully, the item is consumed, the old limb is properly replaced, and the body diagram and stats refresh in sync.
+[*]Fixed replacing a limb sometimes removing the old part without installing the new one, making that body part disappear from the diagram.
+[/list]
+
+[h2]Technical notes[/h2]
+[list]
+[*]Removed the duplicate event subscription the central panel created on the vanilla equipment view, eliminating the root cause of the null-reference exception.
+[*]Added a null guard to the vanilla weight panel so that even a leftover subscription from other mods can no longer break the augmentation install flow.
+[/list]

@@ -1,0 +1,30 @@
+# 构建产物 / build output
+bin/
+obj/
+*.zip
+
+# 工坊打包暂存目录（内容由构建产物拷贝而来）
+# Workshop packaging staging dir (contents are copied build output)
+WorkshopRelease_*/
+
+# 第三方依赖：编译需要，但不随仓库分发
+# Third-party dependency: needed to build, not redistributed here
+libs/*.dll
+
+# 内部发版流程文档（含本机路径，不公开）
+# Internal release-workflow notes (contain local paths, kept private)
+UI_REDESIGN_PLAN.md
+workshop/UPLOAD_COMMANDS.txt
+workshop/PUBLISH_CHECKLIST_CN.md
+workshop/SCREENSHOT_ORDER_CN.md
+
+# 截图：仓库只放压缩过的 JPG，原始 PNG 与历史归档留在本地
+# Screenshots: repo keeps the compressed JPGs only
+workshop/screenshots/
+workshop/screenshots_archive_*/
+
+# IDE / 编辑器
+.vs/
+.idea/
+*.user
+*.suo

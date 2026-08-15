@@ -1,0 +1,39 @@
+[h1]Central Material Management 1.4.0 — Loadouts From the Very Start + Interaction Rework[/h1]
+
+[h2]Loadout presets on the ship equipment screen[/h2]
+[list]
+[*]A loadout strip sits directly above the agent's equipment window on the arsenal screen (the "select equipment" step of raid preparation) and needs no technology unlock -- a fresh run can save, apply and delete loadouts from the start.
+[*]The strip is width-aligned with the window and positioned against the real inventory and tab rects; it hugs the inventory/shuttle tab row in the pre-departure screen and keeps a one-cell clearance above a bare window. Its dropdown opens aligned with the trigger and always draws on top.
+[*]Preset selection, save, apply, force-apply and delete all use the existing preset storage -- presets saved by the central panel remain fully compatible, and the central panel's loadout bar stays unchanged.
+[*]Safety: applying a preset no longer routes items into fridge or recycling tabs whose departments have not been built -- items only move into storages the player can actually open. Also fixed a leaked popup overlay when the screen was destroyed on space/dungeon loop switches.
+[/list]
+
+[h2]Browsing[/h2]
+[list]
+[*]Paging replaced with continuous scrolling. The wheel and the arrows both move a full screen and the footer shows the page number, so a long catalogue no longer means clicking through page after page.
+[*]The whole card is a click target now, not just the small chip in its corner. Hold Shift to select a range starting from the last item you picked.
+[*]Right-clicking a card opens the game's own context menu with its real quantity slider, and the wheel adjusts it directly. This replaces the hand-built quantity dialog.
+[*]When a filter matches nothing, a CLEAR FILTERS button appears and resets all four at once -- search text, category, sub-tab and body slot.
+[/list]
+
+[h2]Safety[/h2]
+[list]
+[*]Batch recycling now asks with the game's own confirmation dialog, states the exact amount, and defaults to Cancel. It used to be "click the same button twice within a few seconds", announced only by the caption changing, with nothing to undo it.
+[*]The recycleConfirmSeconds option is therefore inert. It is still parsed so older config files keep loading.
+[/list]
+
+[h2]Augments[/h2]
+[list]
+[*]The augment sub-filters are now just Limbs and Implants, split the way the game's own data is: limbs replace a body part, implants slot into one. The previous five role-based tabs actually pushed weapon-arms out of the limb list, making them harder to find rather than easier.
+[*]Switching augment sub-filters keeps the selected body slot instead of resetting it to All.
+[/list]
+
+[h2]Fixes[/h2]
+[list]
+[*]Fixed number keys 1-9 switching the tabs of the screen underneath while the panel is open. Only that screen's Update was isolated, not its Process, which is where those bindings live.
+[*]Fixed the CLOSE button extending past the panel frame.
+[*]Fixed the footer status readout overlapping the buttons in the narrow layout.
+[*]Fixed Shift range selection still anchoring to an item after it had been deselected by hand.
+[*]A focused search box no longer answers "not pressed" to every key query in the game. Only the keys a text field actually consumes are suppressed; function keys, modifiers and mouse buttons pass through, so other mods are unaffected.
+[*]The central panel's loadout bar now renders inside the equipment window's own UI layer, so the auto-feeder panel can never be covered by it -- both stay fully usable side by side.
+[/list]

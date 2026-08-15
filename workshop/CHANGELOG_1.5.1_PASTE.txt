@@ -1,0 +1,33 @@
+[h1]1.5.1 — Resolution-Aware Trade Panel / 贸易面板自适应分辨率[/h1]
+
+[b]Fixed:[/b] on ultrawide displays the station trade panel was jammed into the top-left corner with a third of the screen empty beside it.
+
+The game switches its UI scale mode by aspect ratio, so an ultrawide screen makes the interface design space [i]wider[/i] rather than shorter — about 853 units across at 21:9 and 1280 at 32:9. The trade panel was a fixed size anchored to the top-left corner, so it stayed pinned there.
+
+[list]
+[*]The trade panel is now centred and fitted to the space it actually has: it takes the available width (capped on very wide screens so the quantity buttons never drift far from the item name) and fits a whole number of list rows into the available height.
+[*]Close, trade points, the pager and the action buttons travel with the right edge as one cluster; the surplus width goes to the item name column and the running total.
+[*]Resolutions with more vertical room (4:3, 5:4) now show 18-19 rows per page instead of a fixed 12.
+[*]At 16:9 the layout is pixel-identical to 1.5.0 — this change does not affect 16:9 players.
+[*]Changing resolution in-game reflows the panel immediately; no need to reopen the screen.
+[*]The trade footer no longer rebuilds its summary string every frame, only when a number in it changes.
+[/list]
+
+Thanks to the ultrawide player who reported this.
+
+[hr][/hr]
+
+[b]修复：[/b]超宽屏下空间站贸易面板挤在屏幕左上角，右侧空出一大片。
+
+游戏会按宽高比切换 UI 缩放模式，超宽屏的界面设计空间实际是[i]变宽[/i]而不是变矮（21:9 约 853 单位宽，32:9 为 1280），而贸易面板此前是按左上角定位的固定尺寸，于是被钉在了角落。
+
+[list]
+[*]贸易面板改为居中，并按实际可用空间自适应：宽度铺满画布（超宽屏设上限，避免数量按钮离物品名太远），列表行数按可用高度拟合。
+[*]关闭、交易点数、页码与操作按钮整体跟随右边缘，多出来的宽度分给物品名称列和结算文字。
+[*]4:3 / 5:4 等纵向空间更充裕的分辨率现在每页显示 18～19 行，不再固定 12 行。
+[*]16:9 下的布局与 1.5.0 逐像素一致，本次改动不影响 16:9 玩家。
+[*]游戏内更改分辨率后面板会立即重排，不需要重开界面。
+[*]贸易页脚不再每帧重新拼接结算文字，只在数值变化时刷新。
+[/list]
+
+感谢反馈该问题的超宽屏玩家。

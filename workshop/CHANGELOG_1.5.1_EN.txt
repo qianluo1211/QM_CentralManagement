@@ -1,0 +1,12 @@
+[h1]Central Material Management 1.5.1 — Resolution-Aware Trade Panel[/h1]
+
+[list]
+[*]Fixed the station trade panel being jammed into the top-left corner on ultrawide displays. The game swaps its UI scale mode by aspect ratio, so an ultrawide screen makes the interface design space WIDER rather than shorter (about 853 units across at 21:9, 1280 at 32:9) -- and the trade panel was a fixed size pinned to the top-left corner, leaving a third of the screen empty beside it.
+[*]The trade panel is now centred and fitted to the space it actually has: it takes the available width (capped on very wide screens so the quantity buttons never drift far from the item name) and fits a whole number of list rows into the available height. Close, trade points, the pager and the action buttons travel with the right edge as one cluster, and the surplus width goes to the item name column and the running total.
+[*]Resolutions with more vertical room (4:3, 5:4) now show 18-19 rows per page instead of a fixed 12.
+[*]At 16:9 the layout is pixel-identical to 1.5.0 -- this change does not affect 16:9 players.
+[*]Changing resolution in-game reflows the panel immediately; no need to reopen the screen.
+[*]The trade footer no longer rebuilds its summary string every frame, only when a number in it changes.
+[/list]
+
+[i]Thanks to the ultrawide player who reported this.[/i]

@@ -1,0 +1,26 @@
+[h1]Central Material Management 1.5.0 — Station Trade Panel + In-Game Mod Settings[/h1]
+
+[h2]Station Trade Panel[/h2]
+[list]
+[*]Replaces the vanilla station trade screen with a central-management-style bulk market panel (requires the Central Logistics Matrix technology; the game's "Fast trade" option must be on, same as vanilla).
+[*]Buy and sell in one panel: the buy page lists the station's entire stock (consumables included, so sold items can be bought back); the sell page lists only items the station accepts, with all your storages aggregated. Search, category filters, and sorting by name / price / quantity.
+[*]Column headers explain every number (their stock / our stock / price / amount / total); the buy footer shows the vanilla discount / markup bar.
+[*]One shared cart with a single Trade action that sells first, then buys with the proceeds; the footer links estimated income, spending, and the resulting balance. tradeConfirm adds a confirmation dialog.
+[*]Prices follow the vanilla formulas exactly — no clamping.
+[*]The mouse wheel only pages. Hold the left button and slide across rows to sweep-select: starting on − subtracts, + adds, MAX fills; Shift/Ctrl/Ctrl+Shift step ×10/×100/×1000; holding still on a row slowly repeats.
+[*]Keyboard shortcuts: B switches panes, [ ] pages, D trades, Delete clears the cart, A selects everything visible. All avoid vanilla bindings, with hints next to the labels.
+[*]Visible barter exchanges: delivering quest items (e.g. the AnCom data chip) shows a dialog listing exactly what the station handed back (items go to cargo automatically).
+[*]The panel rebuilds when the game language changes — no mixed-language leftovers.
+[/list]
+
+[h2]Mod Configuration Menu (MCM)[/h2]
+[list]
+[*]Optional integration with Crynano's Mod Configuration Menu: when subscribed, stationTrade, tradeConfirm, autoUnlockTech, and debugTradeLayout can be changed from the in-game mod settings page. Changes apply immediately and are also written to the mod's own mcm_settings.txt, so they keep working even if MCM is not subscribed next time.
+[*]MCM entries and tooltips follow the game language.
+[/list]
+
+[h2]Fixes[/h2]
+[list]
+[*]autoUnlockTech now also works on brand-new saves (previously only after loading a save).
+[*]Fixed the mod settings showing Chinese while the game is set to English.
+[/list]
