@@ -74,8 +74,6 @@ namespace QM_CentralManagement
 
     internal static class LoadoutPresetRepository
     {
-        private const string StorageKey =
-            "QM_CentralManagement_LoadoutPresets_v1";
         private static LoadoutPresetCollection _data;
 
         internal static LoadoutPresetCollection Data
@@ -459,6 +457,39 @@ namespace QM_CentralManagement
         }
     }
 
+    /// <summary>
+    /// Which wording a preset flow uses. The two hosts differ in what they can
+    /// actually do: the central panel reaches the augmentation station and can
+    /// rebuild the body, while the pre-departure ship bar only moves gear, so
+    /// telling the player "the body is never changed" is only true there.
+    /// Keys, not resolved text -- the language can change under a pooled panel.
+    /// </summary>
+    internal sealed class LoadoutPresetTextSet
+    {
+        internal string SaveBodyKey;
+        internal string ApplyBodyKey;
+        internal string ForceExplanationKey;
+        internal string ApplyFailedKey;
+
+        internal static readonly LoadoutPresetTextSet Central =
+            new LoadoutPresetTextSet
+            {
+                SaveBodyKey = "qmcentral.preset_save_body",
+                ApplyBodyKey = "qmcentral.preset_apply_body",
+                ForceExplanationKey = "qmcentral.preset_force_explanation",
+                ApplyFailedKey = "qmcentral.preset_apply_failed",
+            };
+
+        internal static readonly LoadoutPresetTextSet Ship =
+            new LoadoutPresetTextSet
+            {
+                SaveBodyKey = "qmcentral.preset_ship_save_body",
+                ApplyBodyKey = "qmcentral.preset_ship_apply_body",
+                ForceExplanationKey = "qmcentral.preset_ship_force_explanation",
+                ApplyFailedKey = "qmcentral.preset_ship_apply_failed",
+            };
+    }
+
     internal sealed class LoadoutApplyResult
     {
         internal bool Success;
@@ -599,8 +630,10 @@ namespace QM_CentralManagement
         internal static LoadoutApplyResult Apply(LoadoutPreset preset,
             Mercenary mercenary, MagnumCargo cargo,
             MagnumProgression progression, SpaceTime spaceTime,
-            PerkFactory perkFactory, bool forceMissing = false)
+            PerkFactory perkFactory, bool forceMissing = false,
+            LoadoutPresetTextSet texts = null)
         {
+            texts = texts ?? LoadoutPresetTextSet.Central;
             var result = Check(preset, mercenary, cargo, progression);
             if (!result.Success && !(forceMissing && result.CanForce))
                 return result;
@@ -626,8 +659,8 @@ namespace QM_CentralManagement
                 return new LoadoutApplyResult
                 {
                     Success = false,
-                    Message = string.Format(Localization.Get(
-                        "qmcentral.preset_apply_failed"), e.Message)
+                    Message = string.Format(
+                        Localization.Get(texts.ApplyFailedKey), e.Message)
                 };
             }
         }

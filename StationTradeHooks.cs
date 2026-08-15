@@ -50,149 +50,7 @@ namespace QM_CentralManagement
         internal static KeyCode ShortcutClearCart => _shortcutClearCart;
         internal static KeyCode ShortcutSelectAll => _shortcutSelectAll;
 
-        internal static void ParseStationTradeConfig(string key, string value)
-        {
-            if (key.Equals("stationTrade", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!bool.TryParse(value, out _stationTradeEnabled))
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "stationTrade must be true or false.");
-                }
-            }
-            else if (key.Equals("tradeConfirm",
-                         StringComparison.OrdinalIgnoreCase)
-                     || key.Equals("buyConfirm",
-                         StringComparison.OrdinalIgnoreCase)
-                     || key.Equals("sellConfirm",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                // buyConfirm / sellConfirm are kept parsed so old config
-                // files do not warn; both now map to the combined trade
-                // confirmation.
-                if (!bool.TryParse(value, out _tradeConfirm))
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "tradeConfirm must be true or false.");
-                }
-            }
-            else if (key.Equals("debugTradeLayout",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                if (!bool.TryParse(value, out _debugTradeLayout))
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "debugTradeLayout must be true or false.");
-                }
-            }
-            else if (key.Equals("preventTradeArbitrage",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                // Obsolete: the anti-arbitrage floor was removed, so prices
-                // follow the vanilla formulas again. Still parsed so an old
-                // config.txt does not report an unknown option.
-            }
-            else if (key.Equals("tradeWithoutTech",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                // Obsolete: the trade screen is now gated on the central
-                // management technology alone (autoUnlockTech grants that
-                // technology). Still parsed so an old config.txt does not
-                // report an unknown option.
-            }
-            else if (key.Equals("autoUnlockTech",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                if (!bool.TryParse(value, out _autoUnlockTech))
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "autoUnlockTech must be true or false.");
-                }
-            }
-            else if (key.Equals("quantityShiftStep",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                if (!int.TryParse(value, out _quantityShiftStep)
-                    || _quantityShiftStep < 1 || _quantityShiftStep > 9999)
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "quantityShiftStep must be between 1 and 9999; keeping "
-                                     + _quantityShiftStep + ".");
-                }
-            }
-            else if (key.Equals("quantityCtrlStep",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                if (!int.TryParse(value, out _quantityCtrlStep)
-                    || _quantityCtrlStep < 1 || _quantityCtrlStep > 9999)
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "quantityCtrlStep must be between 1 and 9999; keeping "
-                                     + _quantityCtrlStep + ".");
-                }
-            }
-            else if (key.Equals("quantityCtrlShiftStep",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                if (!int.TryParse(value, out _quantityCtrlShiftStep)
-                    || _quantityCtrlShiftStep < 1
-                    || _quantityCtrlShiftStep > 9999)
-                {
-                    Debug.LogWarning(LogPrefix
-                                     + "quantityCtrlShiftStep must be between 1 and 9999; keeping "
-                                     + _quantityCtrlShiftStep + ".");
-                }
-            }
-            else if (key.Equals("shortcutTogglePane",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                ParseShortcutKey(value, ref _shortcutTogglePane,
-                    "shortcutTogglePane");
-            }
-            else if (key.Equals("shortcutPrevPage",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                ParseShortcutKey(value, ref _shortcutPrevPage,
-                    "shortcutPrevPage");
-            }
-            else if (key.Equals("shortcutNextPage",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                ParseShortcutKey(value, ref _shortcutNextPage,
-                    "shortcutNextPage");
-            }
-            else if (key.Equals("shortcutTrade",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                ParseShortcutKey(value, ref _shortcutTrade, "shortcutTrade");
-            }
-            else if (key.Equals("shortcutClearCart",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                ParseShortcutKey(value, ref _shortcutClearCart,
-                    "shortcutClearCart");
-            }
-            else if (key.Equals("shortcutSelectAll",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                ParseShortcutKey(value, ref _shortcutSelectAll,
-                    "shortcutSelectAll");
-            }
-        }
 
-        private static void ParseShortcutKey(string value, ref KeyCode target,
-            string name)
-        {
-            if (!Enum.TryParse<KeyCode>(value, true, out var parsed)
-                || parsed == KeyCode.None)
-            {
-                Debug.LogWarning(LogPrefix + name + " '" + value
-                                 + "' is not a valid Unity KeyCode; keeping "
-                                 + target + ".");
-                return;
-            }
-            target = parsed;
-        }
 
         // SpaceStationsWindow privates.
         private static AccessTools.FieldRef<SpaceStationsWindow, bool>
@@ -274,6 +132,7 @@ namespace QM_CentralManagement
 
         private static void PatchStationTrade(Harmony harmony)
         {
+            ModInputGate.Register(() => CentralStationTradePanel.CapturesInput);
             _swAllowClicks = AccessTools.FieldRefAccess<SpaceStationsWindow,
                 bool>("_allowClicks");
             _swTravel = AccessTools.FieldRefAccess<SpaceStationsWindow,
@@ -320,22 +179,10 @@ namespace QM_CentralManagement
                 postfix: nameof(FastTradeConfigurePostfix),
                 argumentTypes: new[] { typeof(Station) });
 
-            // The panel covers the whole screen (first-release layout), so
-            // the vanilla cargo window and both station pages are hidden and
-            // the screen's Update/Process are isolated exactly like central
-            // mode isolates its host screen.
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "OnEnable",
-                postfix: nameof(StationTradeOnEnablePostfix),
-                argumentTypes: Type.EmptyTypes);
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "OnDisable",
-                prefix: nameof(StationTradeOnDisablePrefix),
-                argumentTypes: Type.EmptyTypes);
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "Update",
-                prefix: nameof(StationTradeUpdatePrefix),
-                argumentTypes: Type.EmptyTypes);
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "Process",
-                prefix: nameof(StationTradeProcessPrefix),
-                argumentTypes: new[] { typeof(bool).MakeByRefType() });
+            // The panel covers the whole screen, so the vanilla cargo window
+            // and both station pages are hidden and the screen's Update and
+            // Process are isolated -- all of which now runs through the shared
+            // IScreenPanel dispatch in PatchScreenPanels.
         }
 
         /// <summary>
@@ -430,84 +277,13 @@ namespace QM_CentralManagement
             }
         }
 
-        private static void HideVanillaTradeUi(FastTradeScreen screen)
+        internal static void HideVanillaTradeUi(FastTradeScreen screen)
         {
-            if (screen == null)
-                return;
-            _cargoWindow(screen)?.SetActive(false);
-            _ftTabsView(screen)?.gameObject.SetActive(false);
-            _ftCargoTradePage(screen)?.gameObject.SetActive(false);
-            _ftExchangePage(screen)?.gameObject.SetActive(false);
+            screen?.GetComponent<CentralStationTradePanel>()?.HideVanillaUi();
         }
 
-        private static void StationTradeOnEnablePostfix(
-            ScreenWithShipCargo __instance)
-        {
-            if (!(__instance is FastTradeScreen screen))
-                return;
-            try
-            {
-                var panel = screen.GetComponent<CentralStationTradePanel>();
-                if (panel == null || !panel.IsPanelActive)
-                    return;
-                HideVanillaTradeUi(screen);
-                panel.ShowPanel();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix
-                               + "station trade enable failed: " + e);
-            }
-        }
 
-        private static void StationTradeOnDisablePrefix(
-            ScreenWithShipCargo __instance)
-        {
-            try
-            {
-                __instance.GetComponent<CentralStationTradePanel>()
-                    ?.OnScreenClosed();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix
-                               + "station trade cleanup failed: " + e);
-            }
-        }
 
-        private static bool StationTradeUpdatePrefix(
-            ScreenWithShipCargo __instance)
-        {
-            try
-            {
-                var panel = __instance.GetComponent<CentralStationTradePanel>();
-                return panel == null || !panel.IsPanelActive;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix
-                               + "station trade update isolation failed: " + e);
-                return true;
-            }
-        }
 
-        private static bool StationTradeProcessPrefix(
-            ScreenWithShipCargo __instance, out bool interruptProcessing)
-        {
-            // false means "nothing consumed here", so the rest of the UI
-            // input chain carries on exactly as it would without this screen.
-            interruptProcessing = false;
-            try
-            {
-                var panel = __instance.GetComponent<CentralStationTradePanel>();
-                return panel == null || !panel.IsPanelActive;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix
-                               + "station trade process isolation failed: " + e);
-                return true;
-            }
-        }
     }
 }

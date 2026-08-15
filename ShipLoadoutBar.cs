@@ -4,7 +4,6 @@ using System.Linq;
 using MGSC;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace QM_CentralManagement
 {
@@ -21,16 +20,6 @@ namespace QM_CentralManagement
     /// </summary>
     internal sealed class ShipLoadoutBar : MonoBehaviour
     {
-        private enum PopupMode
-        {
-            None,
-            Save,
-            Apply,
-            ForceApply,
-            Delete,
-            Message
-        }
-
         private const float BarWidth = 300f;
         private const float BarHeight = 22f;
         private const float MinBarWidth = 260f;
@@ -43,8 +32,6 @@ namespace QM_CentralManagement
         // one-cell clearance -- the tabs are the bar's direct neighbour.
         private const float TabsGap = 3f;
         private const float BelowGap = 3f;
-        private const float PopupWidth = 260f;
-        private const float PopupHeight = 136f;
 
         // Horizontal layout, right-anchored: the buttons stick to the bar's
         // right edge and the preset selector stretches between the title and
@@ -54,7 +41,6 @@ namespace QM_CentralManagement
         private const float RightGroupWidth = 150f;
 
         private static ShipLoadoutBar _active;
-        private static int _releaseBlockFrame = -1;
 
         private ArsenalScreen _screen;
         private Mercenary _mercenary;
@@ -83,31 +69,52 @@ namespace QM_CentralManagement
         private GameObject _dropdownRoot;
         private readonly List<GameObject> _dropdownRows =
             new List<GameObject>();
-        private GameObject _overlayRoot;
-        private GameObject _popupRoot;
-        private TextMeshProUGUI _popupTitle;
-        private TextMeshProUGUI _popupBody;
-        private TextMeshProUGUI _popupConfirmLabel;
-        private TextMeshProUGUI _popupCancelLabel;
-        private TextMeshProUGUI _nameText;
-        private TMP_Text _namePlaceholder;
-        private TMP_InputField _nameInput;
-        private PopupMode _popupMode;
-        private string _pendingId;
+        private LoadoutPresetPopup _popup;
+
+        /// <summary>
+        /// The save / apply / delete modal, shared with the central panel's
+        /// preset bar. This host uses the SHIP wording: it only moves gear
+        /// and carried items, so promising that the body is left alone is
+        /// true here and would be a lie in the central panel.
+        /// </summary>
+        private LoadoutPresetPopup Popup
+        {
+            get
+            {
+                if (_popup == null)
+                {
+                    _popup = new LoadoutPresetPopup(
+                        LoadoutPresetTextSet.Ship,
+                        () => new LoadoutPresetContext
+                        {
+                            Mercenary = _mercenary,
+                            Cargo = _cargo,
+                            Progression = _progression,
+                            SpaceTime = _spaceTime,
+                            PerkFactory = _screen == null
+                                ? null
+                                : Plugin.ScreenPerkFactoryOf(_screen),
+                        },
+                        RefreshLabels,
+                        () => _screen?.RefreshView(),
+                        ModInputGate.ConsumePointerRelease,
+                        () => CloseDropdown(_dropdownRoot));
+                }
+                return _popup;
+            }
+        }
 
         /// <summary>
         /// Blocks the game's own hotkey handling while this bar owns the
-        /// keyboard, mirroring CentralManagementPanel.ShouldBlockGameInput.
+        /// keyboard, contributing to the shared ModInputGate.
         /// </summary>
         internal static bool AnyInputCaptured =>
             (_active != null && _active._visible
-             && ((_active._nameInput != null
-                  && _active._nameInput.isFocused)
+             && (_active._popup?.IsInputFocused == true
                  || (_active._dropdownRoot != null
                      && _active._dropdownRoot.activeSelf)
-                 || (_active._overlayRoot != null
-                     && _active._overlayRoot.activeSelf)))
-            || Time.frameCount == _releaseBlockFrame;
+                 || _active._popup?.IsOpen == true))
+            || ModInputGate.IsFrameBlocked;
 
         internal static void RefreshFor(ArsenalScreen screen)
         {
@@ -208,7 +215,7 @@ namespace QM_CentralManagement
 
         internal void Hide()
         {
-            ClosePopup();
+            _popup?.Close();
             CloseDropdown(_dropdownRoot);
             if (_root != null)
                 _root.SetActive(false);
@@ -225,7 +232,7 @@ namespace QM_CentralManagement
             {
                 VanillaSkin.Seed(parent);
 
-                _root = CreateUiObject("QM_ShipLoadoutBar", parent);
+                _root = PanelUi.CreateUiObject("QM_ShipLoadoutBar", parent);
                 var rect = (RectTransform)_root.transform;
                 rect.anchorMin = new Vector2(0.5f, 1f);
                 rect.anchorMax = new Vector2(0.5f, 1f);
@@ -234,49 +241,52 @@ namespace QM_CentralManagement
                 rect.localScale = Vector3.one;
                 rect.localRotation = Quaternion.identity;
                 var panel = VanillaSkin.Slice(_root,
-                    VanillaSkin.PanelFrame, PanelColor);
+                    VanillaSkin.PanelFrame, PanelUi.PanelColor);
                 panel.raycastTarget = true;
 
-                _titleLabel = CreateText("Title", rect, 2f, 0f,
+                _titleLabel = PanelUi.CreateText("Title", rect, 2f, 0f,
                     TitleWidth, BarHeight, TextContext.IgnoreSize, 7f,
-                    BrightColor, TextAlignmentOptions.MidlineLeft);
-                _selectedRoot = CreateDropdownTrigger("Selected", rect,
-                    SelectedLeft, RightGroupWidth, out _selectedLabel);
-                _selectedButton = ButtonOf(_selectedRoot);
-                BindClick(_selectedRoot, ToggleDropdown);
+                    PanelUi.BrightColor, TextAlignmentOptions.MidlineLeft);
+                _selectedRoot = PanelUi.CreateDropdownTriggerStretched("Selected", rect,
+                    SelectedLeft, 2f, RightGroupWidth, 18f,
+                    out _selectedLabel);
+                _selectedButton = PanelUi.ButtonOf(_selectedRoot);
+                PanelUi.BindClick(_selectedRoot, ToggleDropdown);
 
-                _applyRoot = CreateButtonRoot("Apply", rect, 0f, 0f,
+                _applyRoot = PanelUi.CreateButtonRoot("Apply", rect, 0f, 0f,
                     44f, 18f, "qmcentral.tip.preset_apply", out _,
                     out _applyLabel);
-                SetTopRight((RectTransform)_applyRoot.transform, 104f, 2f,
+                PanelUi.SetTopRight((RectTransform)_applyRoot.transform, 104f, 2f,
                     44f, 18f);
-                _applyButton = ButtonOf(_applyRoot);
-                BindClick(_applyRoot, OpenApplyPopup);
-                _saveRoot = CreateButtonRoot("Save", rect, 0f, 0f,
+                _applyButton = PanelUi.ButtonOf(_applyRoot);
+                PanelUi.BindClick(_applyRoot, () => Popup.OpenApply());
+                _saveRoot = PanelUi.CreateButtonRoot("Save", rect, 0f, 0f,
                     52f, 18f, "qmcentral.tip.preset_save", out _,
                     out _saveLabel);
-                SetTopRight((RectTransform)_saveRoot.transform, 50f, 2f,
+                PanelUi.SetTopRight((RectTransform)_saveRoot.transform, 50f, 2f,
                     52f, 18f);
-                _saveButton = ButtonOf(_saveRoot);
-                BindClick(_saveRoot, OpenSavePopup);
-                _deleteRoot = CreateButtonRoot("Delete", rect, 0f, 0f,
+                _saveButton = PanelUi.ButtonOf(_saveRoot);
+                PanelUi.BindClick(_saveRoot, () => Popup.OpenSave());
+                _deleteRoot = PanelUi.CreateButtonRoot("Delete", rect, 0f, 0f,
                     46f, 18f, "qmcentral.tip.preset_delete", out _,
                     out _deleteLabel);
-                SetTopRight((RectTransform)_deleteRoot.transform, 2f, 2f,
+                PanelUi.SetTopRight((RectTransform)_deleteRoot.transform, 2f, 2f,
                     46f, 18f);
-                MakeDangerButton(_deleteRoot, _deleteLabel);
-                _deleteButton = ButtonOf(_deleteRoot);
-                BindClick(_deleteRoot, OpenDeletePopup);
+                PanelUi.MakeDangerButton(_deleteRoot, _deleteLabel);
+                _deleteButton = PanelUi.ButtonOf(_deleteRoot);
+                PanelUi.BindClick(_deleteRoot, () => Popup.OpenDelete());
 
-                _dropdownRoot = CreateUiObject("PresetDropdown", rect);
+                _dropdownRoot = PanelUi.CreateUiObject("PresetDropdown", rect);
                 var dropdownRect = (RectTransform)_dropdownRoot.transform;
-                SetTopLeft(dropdownRect, SelectedLeft, -21f, 200f, 21f);
+                PanelUi.SetTopLeft(dropdownRect, SelectedLeft, -21f, 200f, 21f);
                 var dropdownBackground = VanillaSkin.Slice(_dropdownRoot,
-                    VanillaSkin.ListBackground, PanelColor);
+                    VanillaSkin.ListBackground, PanelUi.PanelColor);
                 dropdownBackground.raycastTarget = true;
                 _dropdownRoot.SetActive(false);
 
-                BuildPopup(parent);
+                Popup.Build(UI.ScreenRoot != null
+                    ? UI.ScreenRoot
+                    : parent);
 
                 _built = true;
                 _root.SetActive(false);
@@ -288,116 +298,46 @@ namespace QM_CentralManagement
             }
         }
 
-        private void BuildPopup(Transform screenParent)
-        {
-            // The modal scrim hangs off the global canvas root so it covers
-            // the whole screen no matter how deep the equipment window sits.
-            Transform overlayParent = screenParent;
-            var screenRoot = UI.ScreenRoot;
-            if (screenRoot != null)
-                overlayParent = screenRoot;
-
-            _overlayRoot = CreateUiObject("ShipLoadoutOverlay",
-                overlayParent);
-            var overlayRect = (RectTransform)_overlayRoot.transform;
-            Stretch(overlayRect);
-            var overlay = _overlayRoot.AddComponent<Image>();
-            overlay.color = VanillaSkin.Palette.Scrim;
-            overlay.raycastTarget = true;
-            var overlayButton = _overlayRoot.AddComponent<Button>();
-            ConfigureButton(overlayButton, overlay);
-            overlayButton.onClick.AddListener(ClosePopup);
-
-            _popupRoot = CreateUiObject("ShipLoadoutPopup",
-                _overlayRoot.transform);
-            var popupRect = (RectTransform)_popupRoot.transform;
-            popupRect.anchorMin = new Vector2(0.5f, 0.5f);
-            popupRect.anchorMax = new Vector2(0.5f, 0.5f);
-            popupRect.pivot = new Vector2(0.5f, 0.5f);
-            popupRect.anchoredPosition = Vector2.zero;
-            popupRect.sizeDelta = new Vector2(PopupWidth, PopupHeight);
-            var popup = VanillaSkin.Slice(_popupRoot,
-                VanillaSkin.PanelFrame, PanelColor);
-            popup.raycastTarget = true;
-
-            _popupTitle = CreateText("Title", popupRect, 8f, -6f, 244f,
-                18f, TextContext.WindowCaption, 0f, BrightColor,
-                TextAlignmentOptions.MidlineLeft);
-            _popupBody = CreateText("Body", popupRect, 8f, -27f, 244f, 52f,
-                TextContext.IgnoreSize, 7f, ValueColor,
-                TextAlignmentOptions.TopLeft);
-            _popupBody.enableWordWrapping = true;
-            _popupBody.overflowMode = TextOverflowModes.Ellipsis;
-
-            var inputRoot = CreateUiObject("Name", popupRect);
-            SetTopLeft((RectTransform)inputRoot.transform, 8f, -82f, 244f,
-                20f);
-            var inputBackground = VanillaSkin.Slice(inputRoot,
-                VanillaSkin.ListBackground, CardColor);
-            var viewport = CreateUiObject("Viewport", inputRoot.transform);
-            var viewportRect = (RectTransform)viewport.transform;
-            Stretch(viewportRect);
-            viewportRect.offsetMin = new Vector2(4f, 1f);
-            viewportRect.offsetMax = new Vector2(-4f, -1f);
-            viewport.AddComponent<RectMask2D>();
-            _nameText = CreateText("Text", viewport.transform, 0f, 0f,
-                236f, 18f, TextContext.IgnoreSize, 7f, BrightColor,
-                TextAlignmentOptions.MidlineLeft);
-            var placeholder = CreateText("Placeholder",
-                viewport.transform, 0f, 0f, 236f, 18f,
-                TextContext.IgnoreSize, 7f, OffColor,
-                TextAlignmentOptions.MidlineLeft);
-            placeholder.fontStyle = FontStyles.Italic;
-            _namePlaceholder = placeholder;
-            _nameInput = inputRoot.AddComponent<TMP_InputField>();
-            _nameInput.targetGraphic = inputBackground;
-            _nameInput.textViewport = viewportRect;
-            _nameInput.textComponent = _nameText;
-            _nameInput.placeholder = _namePlaceholder;
-            _nameInput.lineType = TMP_InputField.LineType.SingleLine;
-            _nameInput.characterLimit = 28;
-            _nameInput.richText = false;
-            _nameInput.onSelect.AddListener(_ =>
-                Input.imeCompositionMode = IMECompositionMode.On);
-            _nameInput.onDeselect.AddListener(_ =>
-                _releaseBlockFrame = Time.frameCount);
-
-            var cancelRoot = CreateButtonRoot("Cancel", popupRect, 8f,
-                -108f, 118f, 20f, out _, out _popupCancelLabel);
-            BindClick(cancelRoot, ClosePopup);
-            var confirmRoot = CreateButtonRoot("Confirm", popupRect, 134f,
-                -108f, 118f, 20f, out _, out _popupConfirmLabel);
-            BindClick(confirmRoot, ConfirmPopup);
-            _overlayRoot.SetActive(false);
-        }
 
         private void Discard()
         {
             if (_root != null)
                 Destroy(_root);
-            if (_overlayRoot != null)
-                Destroy(_overlayRoot);
+            _popup?.Discard();
+            _popup = null;
             _root = null;
             _dropdownRoot = null;
             _dropdownOriginalParent = null;
-            _overlayRoot = null;
-            _popupRoot = null;
             _dropdownRows.Clear();
             _built = false;
         }
 
         private void OnDestroy()
         {
-            // The overlay is parented to the global UI.ScreenRoot, which
+            // The popup's scrim is parented to the global UI.ScreenRoot, which
             // outlives this pooled (non-singleton) screen. Destroy it here
             // or every space/dungeon loop switch leaks one popup group.
-            if (_overlayRoot != null)
-                Destroy(_overlayRoot);
-            _overlayRoot = null;
-            _popupRoot = null;
+            _popup?.Discard();
+            _popup = null;
             _dropdownOriginalParent = null;
             if (ReferenceEquals(_active, this))
                 _active = null;
+        }
+
+        /// <summary>
+        /// While the modal owns the screen it also owns Escape and Enter, and
+        /// the raw drag controller has to stay paused underneath it.
+        /// </summary>
+        private void Update()
+        {
+            if (_popup?.IsOpen == true)
+            {
+                UI.Drag.Pause(0.08f);
+                _popup.HandleKeys();
+                return;
+            }
+            if (_dropdownRoot != null && _dropdownRoot.activeInHierarchy)
+                UI.Drag.Pause(0.08f);
         }
 
         /// <summary>
@@ -466,49 +406,29 @@ namespace QM_CentralManagement
         private string _lastPlacement;
 
         /// <summary>
-        /// Temporary always-on diagnostic: logs the window, bar and screen
-        /// geometry in WORLD corners once per distinct placement, so
-        /// misalignment can be diagnosed from Player.log alone.
+        /// Window, bar and screen geometry in world corners, so a misaligned
+        /// strip can be diagnosed from Player.log alone.
         /// </summary>
         private void LogPlacement()
         {
             var rect = (RectTransform)_root.transform;
             var text = "ship loadout bar placed: window world="
-                       + FormatWorld(_windowRect)
-                       + " (local=" + FormatRect(_windowRect.rect)
+                       + LayoutDebug.World(_windowRect)
+                       + " (local=" + LayoutDebug.Local(_windowRect.rect)
                        + ", anchor=" + _windowRect.anchorMin + "/"
                        + _windowRect.anchorMax + ", pos="
                        + _windowRect.anchoredPosition + ")"
-                       + " | bar world=" + FormatWorld(rect)
+                       + " | bar world=" + LayoutDebug.World(rect)
                        + " (pivot=" + rect.pivot + ", pos="
                        + rect.anchoredPosition + ", size=" + rect.sizeDelta
                        + ")";
             var caption = _windowRect.Find("CaptionBlock") as RectTransform;
             if (caption != null)
-                text += " | caption world=" + FormatWorld(caption);
+                text += " | caption world=" + LayoutDebug.World(caption);
             var screenRoot = UI.ScreenRoot;
             if (screenRoot != null)
-                text += " | screen world=" + FormatWorld(screenRoot);
-            if (text == _lastPlacement)
-                return;
-            _lastPlacement = text;
-            Plugin.DebugLog(text);
-        }
-
-        private static string FormatRect(Rect rect)
-        {
-            return string.Format("(x={0:F0},y={1:F0},w={2:F0},h={3:F0})",
-                rect.x, rect.y, rect.width, rect.height);
-        }
-
-        private static string FormatWorld(RectTransform transform)
-        {
-            if (transform == null)
-                return "null";
-            var corners = new Vector3[4];
-            transform.GetWorldCorners(corners);
-            return string.Format("BL=({0:F0},{1:F0}) TR=({2:F0},{3:F0})",
-                corners[0].x, corners[0].y, corners[2].x, corners[2].y);
+                text += " | screen world=" + LayoutDebug.World(screenRoot);
+            LayoutDebug.LogChanged(ref _lastPlacement, text);
         }
 
         /// <summary>
@@ -570,14 +490,13 @@ namespace QM_CentralManagement
             foreach (var text in new[]
                      {
                          _titleLabel, _selectedLabel, _applyLabel,
-                         _saveLabel, _deleteLabel, _popupTitle, _popupBody,
-                         _nameText, _namePlaceholder, _popupConfirmLabel,
-                         _popupCancelLabel
+                         _saveLabel, _deleteLabel,
                      })
             {
                 if (text != null)
                     text.font = font;
             }
+            _popup?.ApplyFont(font);
         }
 
         private void ToggleDropdown()
@@ -624,7 +543,7 @@ namespace QM_CentralManagement
 
         private void RebuildDropdown()
         {
-            ClearDropdownRows(_dropdownRows);
+            PanelUi.ClearDropdownRows(_dropdownRows);
             var presets = LoadoutPresetRepository.Data.Presets
                 .Where(p => p != null)
                 .OrderByDescending(p => p.UpdatedUtcTicks).ToList();
@@ -632,12 +551,12 @@ namespace QM_CentralManagement
             const float rowHeight = 17f;
             var height = Mathf.Max(rowHeight + 4f,
                 presets.Count * rowHeight + 4f);
-            SetTopLeft((RectTransform)_dropdownRoot.transform,
+            PanelUi.SetTopLeft((RectTransform)_dropdownRoot.transform,
                 SelectedLeft, -21f, width, height);
             for (var i = 0; i < presets.Count; i++)
             {
                 var preset = presets[i];
-                var row = CreateButtonRoot("Preset" + i,
+                var row = PanelUi.CreateButtonRoot("Preset" + i,
                     _dropdownRoot.transform, 2f, -2f - i * rowHeight,
                     width - 4f, rowHeight - 1f, out var background,
                     out var label);
@@ -646,9 +565,9 @@ namespace QM_CentralManagement
                 label.alignment = TextAlignmentOptions.MidlineLeft;
                 label.margin = new Vector4(4f, 0f, 2f, 0f);
                 label.fontSize = 6f;
-                SetSurfaceSelected(background,
+                PanelUi.SetSurfaceSelected(background,
                     preset.Id == LoadoutPresetRepository.Data.SelectedId);
-                BindClick(row, () =>
+                PanelUi.BindClick(row, () =>
                 {
                     LoadoutPresetRepository.Select(preset.Id);
                     CloseDropdown(_dropdownRoot);
@@ -656,490 +575,6 @@ namespace QM_CentralManagement
                 });
                 _dropdownRows.Add(row);
             }
-        }
-
-        private void OpenSavePopup()
-        {
-            if (_mercenary == null)
-                return;
-            OpenPopup(PopupMode.Save,
-                Localization.Get("qmcentral.preset_save_title"),
-                Localization.Get("qmcentral.preset_save_body"),
-                Localization.Get("qmcentral.preset_save_confirm"),
-                LoadoutPresetRepository.Selected?.Name
-                ?? LoadoutPresetRepository.SuggestName());
-        }
-
-        private void OpenApplyPopup()
-        {
-            var preset = LoadoutPresetRepository.Selected;
-            if (preset == null || _mercenary == null)
-                return;
-            var validation = LoadoutPresetService.Check(preset, _mercenary,
-                _cargo, _progression);
-            if (!validation.Success)
-            {
-                var issues = validation.AllIssues.ToList();
-                var visibleIssueCount = validation.CanForce ? 4 : 7;
-                var lines = issues.Take(visibleIssueCount).ToList();
-                if (issues.Count > lines.Count)
-                    lines.Add("…");
-                if (validation.CanForce)
-                {
-                    _pendingId = preset.Id;
-                    lines.Add(Localization.Get(
-                        "qmcentral.preset_force_explanation"));
-                    OpenPopup(PopupMode.ForceApply,
-                        Localization.Get("qmcentral.preset_force_title"),
-                        string.Join("\n", lines),
-                        Localization.Get("qmcentral.preset_force_confirm"));
-                }
-                else
-                {
-                    OpenPopup(PopupMode.Message,
-                        Localization.Get("qmcentral.preset_missing_title"),
-                        string.Join("\n", lines),
-                        Localization.Get("qmcentral.preset_close"));
-                }
-                return;
-            }
-            _pendingId = preset.Id;
-            OpenPopup(PopupMode.Apply,
-                Localization.Get("qmcentral.preset_apply_title"),
-                string.Format(Localization.Get(
-                    "qmcentral.preset_apply_body"), preset.Name,
-                    LoadoutPresetService.GetSummary(preset)),
-                Localization.Get("qmcentral.preset_apply_confirm"));
-        }
-
-        private void OpenDeletePopup()
-        {
-            var preset = LoadoutPresetRepository.Selected;
-            if (preset == null)
-                return;
-            _pendingId = preset.Id;
-            OpenPopup(PopupMode.Delete,
-                Localization.Get("qmcentral.preset_delete_title"),
-                string.Format(Localization.Get(
-                    "qmcentral.preset_delete_body"), preset.Name),
-                Localization.Get("qmcentral.preset_delete_confirm"));
-        }
-
-        private void OpenPopup(PopupMode mode, string title, string body,
-            string confirm, string input = null)
-        {
-            if (_overlayRoot == null)
-                return;
-            CloseDropdown(_dropdownRoot);
-            _popupMode = mode;
-            _popupTitle.text = title;
-            _popupBody.text = body;
-            _popupConfirmLabel.text = confirm;
-            _popupCancelLabel.text = Localization.Get(
-                "qmcentral.preset_cancel");
-            var showInput = mode == PopupMode.Save;
-            _nameInput.gameObject.SetActive(showInput);
-            if (showInput)
-            {
-                _namePlaceholder.text = Localization.Get(
-                    "qmcentral.preset_name_placeholder");
-                _nameInput.SetTextWithoutNotify(input ?? string.Empty);
-            }
-            _popupCancelLabel.transform.parent.gameObject.SetActive(
-                mode != PopupMode.Message);
-            _overlayRoot.SetActive(true);
-            _overlayRoot.transform.SetAsLastSibling();
-            ApplyFonts();
-            UI.Drag.Pause(0.18f);
-            if (showInput)
-            {
-                _nameInput.ActivateInputField();
-                _nameInput.Select();
-            }
-        }
-
-        private void ConfirmPopup()
-        {
-            var mode = _popupMode;
-            if (mode == PopupMode.None)
-                return;
-            if (mode == PopupMode.Message)
-            {
-                ClosePopup();
-                return;
-            }
-            if (mode == PopupMode.Save)
-            {
-                var snapshot = LoadoutPresetService.Capture(_mercenary);
-                if (snapshot != null)
-                {
-                    LoadoutPresetRepository.Save(_nameInput.text,
-                        snapshot);
-                    ClosePopup();
-                    RefreshLabels();
-                }
-                return;
-            }
-            var preset = LoadoutPresetRepository.Data.Presets.FirstOrDefault(
-                p => p != null && p.Id == _pendingId);
-            if (mode == PopupMode.Delete)
-            {
-                LoadoutPresetRepository.Delete(_pendingId);
-                ClosePopup();
-                RefreshLabels();
-                return;
-            }
-            if ((mode == PopupMode.Apply
-                 || mode == PopupMode.ForceApply) && preset != null)
-            {
-                var result = LoadoutPresetService.Apply(preset, _mercenary,
-                    _cargo, _progression, _spaceTime,
-                    Plugin.ScreenPerkFactoryOf(_screen),
-                    mode == PopupMode.ForceApply);
-                ClosePopup();
-                if (_screen != null)
-                    _screen.RefreshView();
-                RefreshLabels();
-                if (result.Success)
-                    PlayAppliedSounds(preset);
-                if (!result.Success)
-                {
-                    OpenPopup(PopupMode.Message,
-                        Localization.Get("qmcentral.preset_error_title"),
-                        result.Message,
-                        Localization.Get("qmcentral.preset_close"));
-                }
-            }
-        }
-
-        private void ClosePopup()
-        {
-            if (_overlayRoot == null)
-                return;
-            var wasVisible = _overlayRoot.activeInHierarchy;
-            _nameInput?.DeactivateInputField();
-            _overlayRoot.SetActive(false);
-            _popupMode = PopupMode.None;
-            _pendingId = null;
-            if (wasVisible)
-                ConsumePointerRelease();
-        }
-
-        private void Update()
-        {
-            if (_overlayRoot != null && _overlayRoot.activeInHierarchy)
-            {
-                UI.Drag.Pause(0.08f);
-                if (Input.GetKeyDown(KeyCode.Escape))
-                    ClosePopup();
-                else if (Input.GetKeyDown(KeyCode.Return)
-                         || Input.GetKeyDown(KeyCode.KeypadEnter))
-                    ConfirmPopup();
-                return;
-            }
-            if (_dropdownRoot != null && _dropdownRoot.activeInHierarchy)
-                UI.Drag.Pause(0.08f);
-        }
-
-        private static void PlayAppliedSounds(LoadoutPreset preset)
-        {
-            var controller = SingletonMonoBehaviour<SoundController>.Instance;
-            var sounds = SingletonMonoBehaviour<SoundsStorage>.Instance;
-            if (controller == null || sounds == null)
-                return;
-
-            var hasWeapon = false;
-            var hasOther = false;
-            foreach (var entry in preset?.Equipment
-                     ?? new List<LoadoutEquipmentEntry>())
-            {
-                if (entry == null
-                    || string.IsNullOrWhiteSpace(entry.ItemId))
-                {
-                    continue;
-                }
-                var record = Data.Items.GetRecord(entry.ItemId)
-                             as CompositeItemRecord;
-                if (record?.GetRecord<WeaponRecord>() != null)
-                    hasWeapon = true;
-                else
-                    hasOther = true;
-            }
-            if (hasWeapon)
-                controller.PlayUiSound(sounds.EquipWeapon, isUnique: true);
-            if (hasOther || preset?.IncludesCarriedItems == true)
-                controller.PlayUiSound(sounds.TakeItem, isUnique: true);
-        }
-
-        // ------------------------------------------------------------------
-        // Small UI kit. Mirrors the central panel's own helpers so the bar
-        // renders with identical vanilla art, palette and button behaviour.
-        // ------------------------------------------------------------------
-
-        private static readonly Color PanelColor =
-            new Color(0.006f, 0.018f, 0.015f, 0.99f);
-        private static readonly Color CardColor =
-            new Color(0.012f, 0.038f, 0.031f, 1f);
-        private static Color SelectedColor => VanillaSkin.Palette.Recessed;
-        private static Color BrightColor => VanillaSkin.Palette.Bright;
-        private static Color ValueColor => VanillaSkin.Palette.Value;
-        private static Color OffColor => VanillaSkin.Palette.Muted;
-        private static Color DangerColor => VanillaSkin.Palette.Danger;
-
-        private static GameObject CreateUiObject(string name,
-            Transform parent)
-        {
-            var result = new GameObject(name, typeof(RectTransform),
-                typeof(CanvasRenderer));
-            result.transform.SetParent(parent, false);
-            result.layer = parent.gameObject.layer;
-            return result;
-        }
-
-        private static void SetTopLeft(RectTransform rect, float x,
-            float y, float width, float height)
-        {
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = new Vector2(x, y);
-            rect.sizeDelta = new Vector2(width, height);
-        }
-
-        private static void SetTopRight(RectTransform rect, float right,
-            float top, float width, float height)
-        {
-            rect.anchorMin = new Vector2(1f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(1f, 1f);
-            rect.anchoredPosition = new Vector2(-right, -top);
-            rect.sizeDelta = new Vector2(width, height);
-        }
-
-        private static void SetTopLeftRight(RectTransform rect, float left,
-            float top, float right, float height)
-        {
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.offsetMin = new Vector2(left, -top - height);
-            rect.offsetMax = new Vector2(-right, -top);
-        }
-
-        private static void Stretch(RectTransform rect)
-        {
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-        }
-
-        private static TextMeshProUGUI CreateText(string name,
-            Transform parent, float x, float y, float width, float height,
-            TextContext context, float sizeOverride, Color color,
-            TextAlignmentOptions alignment)
-        {
-            var root = CreateUiObject(name, parent);
-            SetTopLeft((RectTransform)root.transform, x, y, width, height);
-            var text = root.AddComponent<TextMeshProUGUI>();
-            if (sizeOverride > 0f)
-                text.fontSize = sizeOverride;
-            text.color = color;
-            text.alignment = alignment;
-            text.enableWordWrapping = false;
-            text.overflowMode = TextOverflowModes.Ellipsis;
-            text.raycastTarget = false;
-            VanillaSkin.ApplyFont(text, context);
-            return text;
-        }
-
-        private static GameObject CreateButtonRoot(string name,
-            Transform parent, float x, float y, float width, float height,
-            out Image background, out TextMeshProUGUI label)
-        {
-            return CreateButtonRoot(name, parent, x, y, width, height, null,
-                out background, out label);
-        }
-
-        private static GameObject CreateButtonRoot(string name,
-            Transform parent, float x, float y, float width, float height,
-            string tooltipTag, out Image background,
-            out TextMeshProUGUI label)
-        {
-            var root = CreateUiObject(name, parent);
-            SetTopLeft((RectTransform)root.transform, x, y, width, height);
-
-            // CommonButton.OnEnable dereferences background.sprite, so the
-            // whole control is assembled inactive (mirrors the central panel).
-            var wasActive = root.activeSelf;
-            root.SetActive(false);
-
-            background = VanillaSkin.Slice(root, VanillaSkin.ButtonNormal,
-                CardColor);
-            var captionSize = height >= 17f ? 8f : (height >= 14f ? 7f : 6f);
-            label = CreateText("Label", root.transform, 1f, 0f,
-                width - 2f, height, TextContext.IgnoreSize, captionSize,
-                ValueColor, TextAlignmentOptions.Center);
-            StretchInto(label.rectTransform, 2f);
-
-            VanillaSkin.AddHint(root, tooltipTag);
-
-            var button = root.AddComponent<CommonButton>();
-            VanillaSkin.SuppressNavigation(button);
-            button.background = background;
-            button.captionText = label;
-            button.normalBgSprite = background.sprite;
-            button.hoverBgSprite = VanillaSkin.S(VanillaSkin.ButtonHover);
-            button.pressedBgSprite = VanillaSkin.S(VanillaSkin.ButtonPressed);
-            button.disabledBgSprite =
-                VanillaSkin.S(VanillaSkin.ButtonDisabled);
-            button.normalCaptionColor = ValueColor;
-            button.hoverCaptionColor = BrightColor;
-            button.pressedCaptionColor = VanillaSkin.Palette.CaptionPressed;
-            button.disabledCaptionColor =
-                VanillaSkin.Palette.CaptionDisabled;
-
-            root.SetActive(wasActive);
-            return root;
-        }
-
-        private static void StretchInto(RectTransform rect, float inset)
-        {
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = new Vector2(inset, 0f);
-            rect.offsetMax = new Vector2(-inset, 0f);
-        }
-
-        private static GameObject CreateDropdownTrigger(string name,
-            Transform parent, float left, float right,
-            out TextMeshProUGUI label)
-        {
-            const float top = 2f;
-            const float height = 18f;
-            var root = CreateUiObject(name, parent);
-            SetTopLeftRight((RectTransform)root.transform, left, top,
-                right, height);
-
-            var wasActive = root.activeSelf;
-            root.SetActive(false);
-
-            var background = VanillaSkin.Slice(root,
-                VanillaSkin.FieldBackground, CardColor);
-
-            label = CreateText("Label", root.transform, 0f, 0f, 0f,
-                height, TextContext.IgnoreSize, 7f, ValueColor,
-                TextAlignmentOptions.MidlineLeft);
-            var labelRect = label.rectTransform;
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.pivot = new Vector2(0.5f, 0.5f);
-            labelRect.offsetMin = new Vector2(4f, 0f);
-            labelRect.offsetMax = new Vector2(-VanillaSkin.CaretWellW, 0f);
-
-            var caretObject = CreateUiObject("Caret", root.transform);
-            var caretRect = (RectTransform)caretObject.transform;
-            caretRect.anchorMin = new Vector2(1f, 0.5f);
-            caretRect.anchorMax = new Vector2(1f, 0.5f);
-            caretRect.pivot = new Vector2(0.5f, 0.5f);
-            caretRect.anchoredPosition = new Vector2(-9f, 0f);
-            caretRect.sizeDelta = new Vector2(VanillaSkin.CaretW,
-                VanillaSkin.CaretH);
-            VanillaSkin.Simple(caretObject, VanillaSkin.CaretArrow,
-                    ValueColor)
-                .raycastTarget = false;
-
-            var button = root.AddComponent<CommonButton>();
-            VanillaSkin.SuppressNavigation(button);
-            button.background = background;
-            button.captionText = label;
-            button.normalBgSprite = background.sprite;
-            button.hoverBgSprite = background.sprite;
-            button.pressedBgSprite = background.sprite;
-            button.disabledBgSprite =
-                VanillaSkin.S(VanillaSkin.FieldBackgroundBlocked)
-                ?? VanillaSkin.S(VanillaSkin.ButtonDisabled)
-                ?? background.sprite;
-            button.normalCaptionColor = ValueColor;
-            button.hoverCaptionColor = BrightColor;
-            button.pressedCaptionColor = BrightColor;
-            button.disabledCaptionColor =
-                VanillaSkin.Palette.CaptionDisabled;
-
-            root.SetActive(wasActive);
-            return root;
-        }
-
-        private static void MakeDangerButton(GameObject root,
-            TextMeshProUGUI label)
-        {
-            var button = ButtonOf(root);
-            if (button == null)
-                return;
-            button.normalCaptionColor = DangerColor;
-            button.hoverCaptionColor = BrightColor;
-            if (label != null)
-                label.color = DangerColor;
-        }
-
-        private static CommonButton ButtonOf(GameObject root)
-        {
-            return root == null ? null : root.GetComponent<CommonButton>();
-        }
-
-        private static void BindClick(GameObject root, Action action)
-        {
-            var button = ButtonOf(root);
-            if (button != null)
-                button.OnClick += (_, __) => action();
-        }
-
-        /// <summary>
-        /// Latched state via the button's own normal sprite, not Image.color:
-        /// colour multiplies against the vanilla art and pointer exit would
-        /// repaint over a naive Select (mirrors the central panel).
-        /// </summary>
-        private static void SetSurfaceSelected(Image image, bool selected)
-        {
-            if (image == null)
-                return;
-            var sprite = VanillaSkin.S(selected
-                ? VanillaSkin.ButtonPressed
-                : VanillaSkin.ButtonNormal);
-            if (sprite == null)
-            {
-                image.color = selected ? SelectedColor : CardColor;
-                return;
-            }
-            var button = image.GetComponent<CommonButton>();
-            if (button != null)
-                button.normalBgSprite = sprite;
-            image.sprite = sprite;
-            image.color = Color.white;
-        }
-
-        private static void ConfigureButton(Button button, Graphic graphic)
-        {
-            button.targetGraphic = graphic;
-            button.transition = Selectable.Transition.ColorTint;
-            var colors = button.colors;
-            colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
-            colors.pressedColor = new Color(0.65f, 0.9f, 0.78f, 1f);
-            colors.disabledColor = new Color(0.32f, 0.37f, 0.35f, 0.55f);
-            colors.fadeDuration = 0.04f;
-            button.colors = colors;
-            button.onClick.AddListener(PlayVanillaButtonClick);
-        }
-
-        private static void PlayVanillaButtonClick()
-        {
-            var controller = SingletonMonoBehaviour<SoundController>.Instance;
-            var sounds = SingletonMonoBehaviour<SoundsStorage>.Instance;
-            if (controller != null && sounds?.ButtonClick != null)
-                controller.PlayUiSound(sounds.ButtonClick, isUnique: true);
         }
 
         private void CloseDropdown(GameObject dropdown)
@@ -1152,28 +587,13 @@ namespace QM_CentralManagement
             {
                 dropdown.transform.SetParent(_dropdownOriginalParent,
                     worldPositionStays: false);
-                SetTopLeft((RectTransform)dropdown.transform,
+                PanelUi.SetTopLeft((RectTransform)dropdown.transform,
                     SelectedLeft, -21f, 200f, 21f);
                 _dropdownOriginalParent = null;
             }
             if (wasVisible)
-                ConsumePointerRelease();
+                ModInputGate.ConsumePointerRelease();
         }
 
-        private static void ConsumePointerRelease()
-        {
-            // Button.onClick fires on mouse-up; after a popup closes, the
-            // same release must not reach an ItemSlot below during this frame.
-            UI.Drag.Pause(0.18f);
-            _releaseBlockFrame = Time.frameCount;
-        }
-
-        private static void ClearDropdownRows(List<GameObject> rows)
-        {
-            foreach (var row in rows)
-                if (row != null)
-                    Destroy(row);
-            rows.Clear();
-        }
     }
 }

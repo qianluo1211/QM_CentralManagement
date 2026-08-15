@@ -1,11 +1,12 @@
 # QM Central Management
 
+# Retired options, still accepted from older config files but ignored:
+#   recycleConfirmSeconds   batch recycling now uses the game's own dialog
+#   preventTradeArbitrage   prices follow the vanilla formulas again
+#   tradeWithoutTech        the trade screen is gated on the technology alone
+
 # Extra diagnostic messages in Player.log.
 debugLogging=false
-
-# Obsolete. Batch recycling now asks with the game's own confirmation dialog,
-# so this value is ignored. Kept only so older config files still load.
-recycleConfirmSeconds=4
 
 # Spaceship shortcut for central management. Use a Unity KeyCode name;
 # set to None to disable it.
@@ -28,11 +29,6 @@ loadoutBarOffsetY=0
 # screen (the "Fast trade" game option must be on).
 stationTrade=true
 
-# Obsolete and ignored: the trade screen is gated on the central
-# management technology alone. autoUnlockTech below grants that
-# technology directly. Kept only so older config files still load.
-tradeWithoutTech=false
-
 # Unlock the central management technology automatically on every loaded
 # save, without researching it.
 autoUnlockTech=false
@@ -45,13 +41,6 @@ tradeConfirm=false
 # sprite names) into Player.log when the panel opens. Useful to align the
 # layout against the actual UI instead of guessed coordinates.
 debugTradeLayout=false
-
-# The vanilla price formula breaks at high reputation (buy prices can reach
-# zero or negative, and sell prices can exceed buy prices, so selling and
-# buying back prints money). This used to be clamped by the mod, but the
-# feature was removed -- prices now follow the vanilla formulas exactly.
-# The key below is obsolete and ignored.
-preventTradeArbitrage=true
 
 # Click steps for the +/- buttons: plain click = 1, Shift+click uses
 # quantityShiftStep, Ctrl+click uses quantityCtrlStep, Ctrl+Shift+click

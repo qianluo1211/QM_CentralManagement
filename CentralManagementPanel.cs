@@ -10,8 +10,24 @@ using UnityEngine.UI;
 
 namespace QM_CentralManagement
 {
-    internal sealed partial class CentralManagementPanel : MonoBehaviour
+    internal sealed partial class CentralManagementPanel : MonoBehaviour,
+        IScreenPanel
     {
+        bool IScreenPanel.OwnsScreen => _centralMode;
+
+        void IScreenPanel.OnScreenEnabled()
+        {
+            // Vanilla's OnEnable turns its cargo window back on; the panel
+            // stands where that window would be.
+            Plugin.CargoWindowOf(_screen)?.SetActive(false);
+            ShowPanel();
+        }
+
+        void IScreenPanel.OnScreenDisabled()
+        {
+            LeaveCentralMode();
+        }
+
         // Card pool ceiling. The grid derives its real row count from the
         // measured panel at runtime, so this only has to be large enough for
         // the tallest canvas (4:3 gives 480 canvas units against 360 at 16:9).
@@ -44,28 +60,6 @@ namespace QM_CentralManagement
         // A lone detail tab must not stretch into a full-width bar; vanilla
         // tabs are chips, and a 616px-wide "ALL" reads as a heading.
         private const float MaxTabWidth = 96f;
-
-        // Surface fills. Only reached when a vanilla sprite cannot be resolved:
-        // a skinned surface leaves Image.color at white so the 9-slice art
-        // carries the colour, and any other value would multiply against it.
-        private static readonly Color PanelColor =
-            new Color(0.006f, 0.018f, 0.015f, 0.99f);
-        private static readonly Color HeaderColor =
-            new Color(0.018f, 0.055f, 0.044f, 1f);
-        private static readonly Color CardColor =
-            new Color(0.012f, 0.038f, 0.031f, 1f);
-
-        // Text and accents come from the game's own palette. These MUST stay
-        // properties: Colors is a SingletonMonoBehaviour and every accessor
-        // dereferences .Instance, so a static field initializer evaluated at
-        // type load would NRE or silently capture default(Color).
-        private static Color SelectedColor => VanillaSkin.Palette.Recessed;
-        private static Color BorderColor => VanillaSkin.Palette.Border;
-        private static Color BrightColor => VanillaSkin.Palette.Bright;
-        private static Color ValueColor => VanillaSkin.Palette.Value;
-        private static Color AccentColor => VanillaSkin.Palette.Accent;
-        private static Color OffColor => VanillaSkin.Palette.Muted;
-        private static Color RecycleColor => VanillaSkin.Palette.Danger;
 
         private enum CargoCategory
         {
@@ -175,7 +169,6 @@ namespace QM_CentralManagement
         }
 
         private static CentralManagementPanel _instance;
-        private static int _blockedInputReleaseFrame = -1;
 
         private readonly CentralInventoryIndex _inventoryIndex =
             new CentralInventoryIndex();
@@ -304,53 +297,53 @@ namespace QM_CentralManagement
         private float CurrentPanelWidth => _operatorPanelVisible ? 282f : 624f;
         private float CurrentInnerWidth => CurrentPanelWidth - PanelPad * 2f;
 
-        internal static bool ShouldBlockGameInput =>
-            ((_instance != null && _instance._centralMode
-              && _instance._root != null && _instance._root.activeInHierarchy
-              && ((_instance._search != null && _instance._search.isFocused)
-                  || UI.IsShowing<CommonContextMenu>()
-                  || (_instance._presetOverlayRoot != null
-                      && _instance._presetOverlayRoot.activeInHierarchy)
-                  || _instance.HasOpenDropdown()))
-             || ShipLoadoutBar.AnyInputCaptured
-             // The station trade panel owns text fields of its own; typed
-             // keys must not reach the game while one of them is focused.
-             || CentralStationTradePanel.BlocksGameInput)
-            || Time.frameCount == _blockedInputReleaseFrame;
+        /// <summary>
+        /// This panel's own contribution to <see cref="ModInputGate"/>. It
+        /// used to OR in the ship bar and the trade panel as well, which made
+        /// the central panel the arbiter for UI it has nothing to do with.
+        /// </summary>
+        internal static bool CapturesInput =>
+            _instance != null && _instance._centralMode
+            && _instance._root != null && _instance._root.activeInHierarchy
+            && ((_instance._search != null && _instance._search.isFocused)
+                || UI.IsShowing<CommonContextMenu>()
+                || _instance.IsPresetPopupOpen
+                || _instance.HasOpenDropdown());
 
+        // The panel's four popup lists. HasOpenDropdown and CloseAllDropdowns
+        // are the ONLY places that enumerate them -- a fifth list is added to
+        // both and everything else (the input gate, the wheel guard, every
+        // "close the others first" path) follows automatically.
         private bool HasOpenDropdown()
         {
-            return (_operatorDropdownRoot != null
-                    && _operatorDropdownRoot.activeInHierarchy)
-                   || (_sortDropdownRoot != null
-                       && _sortDropdownRoot.activeInHierarchy)
-                   || (_slotFilterDropdownRoot != null
-                       && _slotFilterDropdownRoot.activeInHierarchy)
-                   || (_presetDropdownRoot != null
-                       && _presetDropdownRoot.activeInHierarchy);
+            return IsDropdownOpen(_operatorDropdownRoot)
+                   || IsDropdownOpen(_sortDropdownRoot)
+                   || IsDropdownOpen(_slotFilterDropdownRoot)
+                   || IsDropdownOpen(_presetDropdownRoot);
+        }
+
+        private void CloseAllDropdowns()
+        {
+            CloseDropdown(_operatorDropdownRoot);
+            CloseDropdown(_sortDropdownRoot);
+            CloseDropdown(_slotFilterDropdownRoot);
+            CloseDropdown(_presetDropdownRoot);
+        }
+
+        private static bool IsDropdownOpen(GameObject dropdown)
+        {
+            return dropdown != null && dropdown.activeInHierarchy;
         }
 
         private static string _lastCentralRect;
 
-        /// <summary>
-        /// Temporary always-on diagnostic: world corners of the central
-        /// panel, logged once per distinct placement.
-        /// </summary>
         private static void LogCentralPanelRect()
         {
             if (_instance == null || _instance._root == null)
                 return;
-            var corners = new Vector3[4];
-            ((RectTransform)_instance._root.transform).GetWorldCorners(corners);
-            var text = "central panel world BL=("
-                       + corners[0].x.ToString("F0") + ","
-                       + corners[0].y.ToString("F0") + ") TR=("
-                       + corners[2].x.ToString("F0") + ","
-                       + corners[2].y.ToString("F0") + ")";
-            if (text == _lastCentralRect)
-                return;
-            _lastCentralRect = text;
-            Plugin.DebugLog(text);
+            LayoutDebug.LogChanged(ref _lastCentralRect,
+                "central panel world "
+                + LayoutDebug.World((RectTransform)_instance._root.transform));
         }
 
         internal void Configure(ScreenWithShipCargo screen, MagnumCargo cargo,
@@ -438,8 +431,7 @@ namespace QM_CentralManagement
             _selectionAnchorId = null;
             _preferredStacks.Clear();
             ClearPendingSplit();
-            CloseDropdown(_operatorDropdownRoot);
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             _search.SetTextWithoutNotify(string.Empty);
             ApplyFont();
             RebuildAndRefresh();
@@ -457,8 +449,7 @@ namespace QM_CentralManagement
         {
             CloseItemMenu();
             ClosePresetPopup();
-            CloseDropdown(_presetDropdownRoot);
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             ClearPendingSplit();
             _centralMode = false;
             _panelSessionInitialized = false;
@@ -497,7 +488,7 @@ namespace QM_CentralManagement
                 // factory below asks VanillaSkin for sprites.
                 VanillaSkin.Seed(parent);
 
-                _root = CreateUiObject("QM_CentralManagement", parent);
+                _root = PanelUi.CreateUiObject("QM_CentralManagement", parent);
                 // Configure can run while a pooled screen is already active.
                 // Build and lay out the complete panel off-screen, then let
                 // ShowPanel reveal it atomically.
@@ -515,7 +506,7 @@ namespace QM_CentralManagement
                 rect.localScale = Vector3.one;
                 rect.localRotation = Quaternion.identity;
                 var panel = VanillaSkin.Slice(_root, VanillaSkin.PanelFrame,
-                    PanelColor);
+                    PanelUi.PanelColor);
                 panel.raycastTarget = true;
 
                 BuildHeader(_root.transform);
@@ -570,55 +561,56 @@ namespace QM_CentralManagement
 
         private void BuildHeader(Transform parent)
         {
-            _headerRoot = CreateUiObject("Header", parent);
-            SetTopLeft((RectTransform)_headerRoot.transform, 2f, -2f, 278f, 17f);
-            VanillaSkin.Slice(_headerRoot, VanillaSkin.HeaderFrame, HeaderColor);
+            _headerRoot = PanelUi.CreateUiObject("Header", parent);
+            PanelUi.SetTopLeft((RectTransform)_headerRoot.transform, 2f, -2f, 278f, 17f);
+            VanillaSkin.Slice(_headerRoot, VanillaSkin.HeaderFrame, PanelUi.HeaderColor);
 
-            _headerIconRoot = CreateUiObject("Icon", _headerRoot.transform);
-            SetTopLeft((RectTransform)_headerIconRoot.transform, 1f, -1f, 14f, 14f);
+            _headerIconRoot = PanelUi.CreateUiObject("Icon", _headerRoot.transform);
+            PanelUi.SetTopLeft((RectTransform)_headerIconRoot.transform, 1f, -1f, 14f, 14f);
             var icon = _headerIconRoot.AddComponent<Image>();
             icon.sprite = Plugin.FastAccessSprite;
             icon.preserveAspect = true;
             icon.raycastTarget = false;
 
-            _title = CreateText("Title", _headerRoot.transform, 17f, 0f,
-                72f, 17f, TextContext.WindowCaption, BrightColor,
+            _title = PanelUi.CreateText("Title", _headerRoot.transform, 17f, 0f,
+                72f, 17f, TextContext.WindowCaption, PanelUi.BrightColor,
                 TextAlignmentOptions.MidlineLeft);
 
-            _previousOperatorRoot = CreateButtonRoot("PreviousOperator",
+            _previousOperatorRoot = PanelUi.CreateButtonRoot("PreviousOperator",
                 _headerRoot.transform, 91f, -2f, 12f, 13f,
                 "qmcentral.tip.previous_operator", out _, out var previousLabel);
             previousLabel.text = "<";
-            _previousOperatorButton = ButtonOf(_previousOperatorRoot);
-            BindClick(_previousOperatorRoot, () => CycleOperator(-1));
-            _operatorRoot = CreateDropdownTrigger("Operator",
+            _previousOperatorButton = PanelUi.ButtonOf(_previousOperatorRoot);
+            PanelUi.BindClick(_previousOperatorRoot, () => CycleOperator(-1));
+            _operatorRoot = PanelUi.CreateDropdownTrigger("Operator",
                 _headerRoot.transform, 104f, 0f, 45f, 15f, out _operator);
-            _operatorDropdownButton = ButtonOf(_operatorRoot);
-            BindClick(_operatorRoot, ToggleOperatorDropdown);
-            _nextOperatorRoot = CreateButtonRoot("NextOperator",
+            VanillaSkin.AddHint(_operatorRoot, "qmcentral.tip.operator");
+            _operatorDropdownButton = PanelUi.ButtonOf(_operatorRoot);
+            PanelUi.BindClick(_operatorRoot, ToggleOperatorDropdown);
+            _nextOperatorRoot = PanelUi.CreateButtonRoot("NextOperator",
                 _headerRoot.transform, 150f, -2f, 12f, 13f,
                 "qmcentral.tip.next_operator", out _, out var nextLabel);
             nextLabel.text = ">";
-            _nextOperatorButton = ButtonOf(_nextOperatorRoot);
-            BindClick(_nextOperatorRoot, () => CycleOperator(1));
+            _nextOperatorButton = PanelUi.ButtonOf(_nextOperatorRoot);
+            PanelUi.BindClick(_nextOperatorRoot, () => CycleOperator(1));
 
-            _operatorPanelRoot = CreateButtonRoot("OperatorPanel",
+            _operatorPanelRoot = PanelUi.CreateButtonRoot("OperatorPanel",
                 _headerRoot.transform, 164f, -2f, 66f, 13f,
                 "qmcentral.tip.operator_panel", out _, out _operatorPanelLabel);
-            _operatorPanelButton = ButtonOf(_operatorPanelRoot);
-            BindClick(_operatorPanelRoot, ToggleOperatorPanel);
+            _operatorPanelButton = PanelUi.ButtonOf(_operatorPanelRoot);
+            PanelUi.BindClick(_operatorPanelRoot, ToggleOperatorPanel);
 
-            _closeRoot = CreateButtonRoot("Close", _headerRoot.transform,
+            _closeRoot = PanelUi.CreateButtonRoot("Close", _headerRoot.transform,
                 232f, -2f, 44f, 13f, "qmcentral.tip.close",
                 out _, out _closeLabel);
-            BindClick(_closeRoot, ClosePanel);
+            PanelUi.BindClick(_closeRoot, ClosePanel);
 
             BuildOperatorDropdown(parent);
         }
 
         private void BuildOperatorDropdown(Transform parent)
         {
-            _operatorDropdownRoot = CreateUiObject("OperatorDropdown", parent);
+            _operatorDropdownRoot = PanelUi.CreateUiObject("OperatorDropdown", parent);
             var rect = (RectTransform)_operatorDropdownRoot.transform;
             rect.anchorMin = new Vector2(1f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
@@ -626,42 +618,42 @@ namespace QM_CentralManagement
             rect.anchoredPosition = new Vector2(-46f, -23f);
             rect.sizeDelta = new Vector2(170f, 28f);
             var background = VanillaSkin.Slice(_operatorDropdownRoot,
-                VanillaSkin.ListBackground, PanelColor);
+                VanillaSkin.ListBackground, PanelUi.PanelColor);
             background.raycastTarget = true;
             _operatorDropdownRoot.SetActive(false);
         }
 
         private void BuildSearch(Transform parent)
         {
-            _searchRoot = CreateUiObject("Search", parent);
-            SetTopLeft((RectTransform)_searchRoot.transform, 4f, -21f, 274f, 14f);
+            _searchRoot = PanelUi.CreateUiObject("Search", parent);
+            PanelUi.SetTopLeft((RectTransform)_searchRoot.transform, 4f, -21f, 274f, 14f);
             // dropdownListBackground, not dropdownBackground: the latter is
             // authored with a fixed 17px caret well on its right edge.
             var background = VanillaSkin.Slice(_searchRoot,
-                VanillaSkin.ListBackground, CardColor);
+                VanillaSkin.ListBackground, PanelUi.CardColor);
             VanillaSkin.AddHint(_searchRoot, "qmcentral.tip.search");
 
-            var viewport = CreateUiObject("Viewport", _searchRoot.transform);
+            var viewport = PanelUi.CreateUiObject("Viewport", _searchRoot.transform);
             var viewportRect = (RectTransform)viewport.transform;
-            Stretch(viewportRect);
+            PanelUi.Stretch(viewportRect);
             viewportRect.offsetMin = new Vector2(3f, 1f);
             viewportRect.offsetMax = new Vector2(-3f, -1f);
             viewport.AddComponent<RectMask2D>();
 
-            var placeholderObject = CreateUiObject("Placeholder", viewport.transform);
+            var placeholderObject = PanelUi.CreateUiObject("Placeholder", viewport.transform);
             var placeholderRect = (RectTransform)placeholderObject.transform;
-            Stretch(placeholderRect);
+            PanelUi.Stretch(placeholderRect);
             var placeholder = placeholderObject.AddComponent<TextMeshProUGUI>();
-            ConfigureText(placeholder, TextContext.IgnoreSize, 7f,
-                OffColor, TextAlignmentOptions.MidlineLeft);
+            PanelUi.ConfigureText(placeholder, TextContext.IgnoreSize, 7f,
+                PanelUi.OffColor, TextAlignmentOptions.MidlineLeft);
             placeholder.fontStyle = FontStyles.Italic;
             _searchPlaceholder = placeholder;
 
-            var textObject = CreateUiObject("Text", viewport.transform);
+            var textObject = PanelUi.CreateUiObject("Text", viewport.transform);
             var textRect = (RectTransform)textObject.transform;
-            Stretch(textRect);
+            PanelUi.Stretch(textRect);
             _searchText = textObject.AddComponent<TextMeshProUGUI>();
-            ConfigureText(_searchText, TextContext.IgnoreSize, 7f, ValueColor,
+            PanelUi.ConfigureText(_searchText, TextContext.IgnoreSize, 7f, PanelUi.ValueColor,
                 TextAlignmentOptions.MidlineLeft);
 
             _search = _searchRoot.AddComponent<TMP_InputField>();
@@ -674,7 +666,7 @@ namespace QM_CentralManagement
             _search.characterValidation = TMP_InputField.CharacterValidation.None;
             _search.richText = false;
             _search.customCaretColor = true;
-            _search.caretColor = AccentColor;
+            _search.caretColor = PanelUi.AccentColor;
             _search.selectionColor = new Color(0.25f, 0.58f, 0.49f, 0.55f);
             _search.onValueChanged.AddListener(_ =>
             {
@@ -684,34 +676,27 @@ namespace QM_CentralManagement
             _search.onSelect.AddListener(_ =>
                 Input.imeCompositionMode = IMECompositionMode.On);
             _search.onDeselect.AddListener(_ =>
-                _blockedInputReleaseFrame = Time.frameCount);
+                ModInputGate.BlockThisFrame());
 
             // SORT and SLOT open lists too, so they carry the same frame and
             // caret as the operator and preset selectors.
-            _slotFilterRoot = CreateDropdownTrigger("SlotFilter", parent,
+            _slotFilterRoot = PanelUi.CreateDropdownTrigger("SlotFilter", parent,
                 170f, -21f, 52f, RowH, out _slotFilterLabel);
-            BindClick(_slotFilterRoot, ToggleSlotFilterDropdown);
+            VanillaSkin.AddHint(_slotFilterRoot, "qmcentral.tip.slot_filter");
+            PanelUi.BindClick(_slotFilterRoot, ToggleSlotFilterDropdown);
 
-            _sortRoot = CreateDropdownTrigger("Sort", parent,
+            _sortRoot = PanelUi.CreateDropdownTrigger("Sort", parent,
                 224f, -21f, 54f, RowH, out _sortLabel);
-            BindClick(_sortRoot, ToggleSortDropdown);
+            VanillaSkin.AddHint(_sortRoot, "qmcentral.tip.sort");
+            PanelUi.BindClick(_sortRoot, ToggleSortDropdown);
 
-            _slotFilterDropdownRoot = CreateDropdownRoot(
-                "SlotFilterDropdown", parent);
-            _sortDropdownRoot = CreateDropdownRoot("SortDropdown", parent);
-        }
-
-        private static GameObject CreateDropdownRoot(string name,
-            Transform parent)
-        {
-            var root = CreateUiObject(name, parent);
-            SetTopLeft((RectTransform)root.transform, 4f, -41f,
-                90f, 20f);
-            var background = VanillaSkin.Slice(root, VanillaSkin.ListBackground,
-                PanelColor);
-            background.raycastTarget = true;
-            root.SetActive(false);
-            return root;
+            // Placeholder geometry only: ApplyResponsiveLayout owns the real
+            // position and width of both lists, because they depend on the
+            // panel width and on whether the slot filter is showing at all.
+            _slotFilterDropdownRoot = PanelUi.CreateDropdownRoot(
+                "SlotFilterDropdown", parent, PanelPad, -41f, 90f, 20f);
+            _sortDropdownRoot = PanelUi.CreateDropdownRoot(
+                "SortDropdown", parent, PanelPad, -41f, 90f, 20f);
         }
 
         private void BuildCategories(Transform parent)
@@ -723,10 +708,10 @@ namespace QM_CentralManagement
             for (var i = 0; i < categories.Length; i++)
             {
                 var category = categories[i];
-                var root = CreateButtonRoot("Category" + category, parent,
+                var root = PanelUi.CreateButtonRoot("Category" + category, parent,
                     PanelPad, -42f, 60f, TabH,
                     out var background, out var label);
-                BindClick(root, () => SelectCategory(category));
+                PanelUi.BindClick(root, () => SelectCategory(category));
                 _categoryTabs.Add(new FilterTab
                 {
                     Root = root,
@@ -743,10 +728,10 @@ namespace QM_CentralManagement
             for (var i = 0; i < 12; i++)
             {
                 var index = i;
-                var root = CreateButtonRoot("Detail" + i, parent,
+                var root = PanelUi.CreateButtonRoot("Detail" + i, parent,
                     PanelPad, -61f, 60f, TabH,
                     out var background, out var label);
-                BindClick(root, () => SelectDetail(index));
+                PanelUi.BindClick(root, () => SelectDetail(index));
                 _detailTabs.Add(new FilterTab
                 {
                     Root = root,
@@ -764,9 +749,9 @@ namespace QM_CentralManagement
             // plane with a frame drawn on it; vanilla screens read as layers,
             // and this is what separates "content" from "chrome" here.
             // Created before the cards so it sits behind them in the hierarchy.
-            _cardWellRoot = CreateUiObject("CardWell", parent);
+            _cardWellRoot = PanelUi.CreateUiObject("CardWell", parent);
             VanillaSkin.Slice(_cardWellRoot, VanillaSkin.ListBackground,
-                CardColor).raycastTarget = false;
+                PanelUi.CardColor).raycastTarget = false;
 
             for (var i = 0; i < MaxCardsPerPage; i++)
             {
@@ -774,15 +759,15 @@ namespace QM_CentralManagement
                 var column = i % 3;
                 var row = i / 3;
                 var card = new Card();
-                card.Root = CreateUiObject("Card" + i, parent);
-                SetTopLeft((RectTransform)card.Root.transform,
+                card.Root = PanelUi.CreateUiObject("Card" + i, parent);
+                PanelUi.SetTopLeft((RectTransform)card.Root.transform,
                     4f + column * 92f, -72f - row * 34f, 90f, 32f);
                 card.Background = VanillaSkin.Slice(card.Root,
-                    VanillaSkin.SlotNormal, CardColor);
+                    VanillaSkin.SlotNormal, PanelUi.CardColor);
                 card.Background.raycastTarget = true;
 
-                var slotHost = CreateUiObject("SlotHost", card.Root.transform);
-                SetTopLeft((RectTransform)slotHost.transform,
+                var slotHost = PanelUi.CreateUiObject("SlotHost", card.Root.transform);
+                PanelUi.SetTopLeft((RectTransform)slotHost.transform,
                     3f, -4f, SlotColumnW, SlotModule);
                 // No RectMask2D: it clipped the vanilla slot's own hover
                 // animation, which is part of why the icons looked wrong.
@@ -791,11 +776,11 @@ namespace QM_CentralManagement
                 // The name now owns a full-width line of its own, which is what
                 // buys the vanilla 9pt body size -- the old 58px field could
                 // only fit a name by shrinking the type to 6.2pt.
-                card.Name = CreateText("Name", card.Root.transform,
-                    NameX, -2f, 100f, 14f, TextContext.None, BrightColor,
+                card.Name = PanelUi.CreateText("Name", card.Root.transform,
+                    NameX, -2f, 100f, 14f, TextContext.None, PanelUi.BrightColor,
                     TextAlignmentOptions.MidlineLeft);
-                card.Quantity = CreateText("Quantity", card.Root.transform,
-                    NameX, -16f, 60f, 12f, TextContext.SmallNumbers, AccentColor,
+                card.Quantity = PanelUi.CreateText("Quantity", card.Root.transform,
+                    NameX, -16f, 60f, 12f, TextContext.SmallNumbers, PanelUi.AccentColor,
                     TextAlignmentOptions.MidlineLeft);
 
                 // Deliberately no tooltip on the card chip.  All thirty of them
@@ -803,10 +788,10 @@ namespace QM_CentralManagement
                 // the pointer crosses the grid covers the cards behind it --
                 // the vanilla ItemSlot icon already carries the real item
                 // tooltip, which is the one worth reading here.
-                var buttonRoot = CreateButtonRoot("Select", card.Root.transform,
+                var buttonRoot = PanelUi.CreateButtonRoot("Select", card.Root.transform,
                     100f, -17f, ChipW, TabH, out _, out card.SelectLabel);
                 card.SelectRoot = buttonRoot;
-                card.SelectButton = ButtonOf(buttonRoot);
+                card.SelectButton = PanelUi.ButtonOf(buttonRoot);
 
                 // The whole card is a click target, not just the 43x13 chip.
                 // Clicks on the item icon still reach the vanilla ItemSlot --
@@ -818,54 +803,54 @@ namespace QM_CentralManagement
                 _cards[i] = card;
             }
 
-            _empty = CreateText("Empty", parent, 4f, -95f,
-                274f, 30f, TextContext.None, OffColor,
+            _empty = PanelUi.CreateText("Empty", parent, 4f, -95f,
+                274f, 30f, TextContext.None, PanelUi.OffColor,
                 TextAlignmentOptions.Center);
             _empty.gameObject.SetActive(false);
 
             // An empty result used to be a dead end: a line of grey text and no
             // indication of which of the four filters caused it. This is the
             // way out.
-            _clearFiltersRoot = CreateButtonRoot("ClearFilters", parent,
+            _clearFiltersRoot = PanelUi.CreateButtonRoot("ClearFilters", parent,
                 PanelPad, -120f, 96f, RowH, out _, out _clearFiltersLabel);
-            BindClick(_clearFiltersRoot, ClearAllFilters);
+            PanelUi.BindClick(_clearFiltersRoot, ClearAllFilters);
             _clearFiltersRoot.SetActive(false);
         }
 
         private void BuildFooter(Transform parent)
         {
-            _count = CreateText("Count", parent, 4f, -183f,
-                55f, 17f, TextContext.IgnoreSize, 7f, AccentColor,
+            _count = PanelUi.CreateText("Count", parent, 4f, -183f,
+                55f, 17f, TextContext.IgnoreSize, 7f, PanelUi.AccentColor,
                 TextAlignmentOptions.MidlineLeft);
 
-            _selectFilteredRoot = CreateButtonRoot("SelectFiltered", parent,
+            _selectFilteredRoot = PanelUi.CreateButtonRoot("SelectFiltered", parent,
                 60f, -183f, 57f, 17f, "qmcentral.tip.select_filtered",
                 out _, out _selectFilteredLabel);
-            BindClick(_selectFilteredRoot, SelectFiltered);
-            _clearRoot = CreateButtonRoot("Clear", parent,
+            PanelUi.BindClick(_selectFilteredRoot, SelectFiltered);
+            _clearRoot = PanelUi.CreateButtonRoot("Clear", parent,
                 118f, -183f, 34f, 17f, "qmcentral.tip.clear",
                 out _, out _clearLabel);
-            BindClick(_clearRoot, ClearSelection);
-            _previousPageRoot = CreateButtonRoot("Previous", parent,
+            PanelUi.BindClick(_clearRoot, ClearSelection);
+            _previousPageRoot = PanelUi.CreateButtonRoot("Previous", parent,
                 153f, -183f, 14f, 17f, "qmcentral.tip.previous_page",
                 out _, out var previousLabel);
             previousLabel.text = "<";
-            BindClick(_previousPageRoot, () => ChangePage(-1));
-            _page = CreateText("Page", parent, 168f, -183f,
-                30f, 17f, TextContext.SmallNumbers, ValueColor,
+            PanelUi.BindClick(_previousPageRoot, () => ChangePage(-1));
+            _page = PanelUi.CreateText("Page", parent, 168f, -183f,
+                30f, 17f, TextContext.SmallNumbers, PanelUi.ValueColor,
                 TextAlignmentOptions.Center);
-            _nextPageRoot = CreateButtonRoot("Next", parent,
+            _nextPageRoot = PanelUi.CreateButtonRoot("Next", parent,
                 199f, -183f, 14f, 17f, "qmcentral.tip.next_page",
                 out _, out var nextLabel);
             nextLabel.text = ">";
-            BindClick(_nextPageRoot, () => ChangePage(1));
+            PanelUi.BindClick(_nextPageRoot, () => ChangePage(1));
 
-            _recycleRoot = CreateButtonRoot("Recycle", parent,
+            _recycleRoot = PanelUi.CreateButtonRoot("Recycle", parent,
                 214f, -183f, 64f, 17f, "qmcentral.tip.recycle",
                 out _, out _recycleLabel);
-            MakeDangerButton(_recycleRoot, _recycleLabel);
-            _recycleButton = ButtonOf(_recycleRoot);
-            BindClick(_recycleRoot, QueueSelectedForRecycle);
+            PanelUi.MakeDangerButton(_recycleRoot, _recycleLabel);
+            _recycleButton = PanelUi.ButtonOf(_recycleRoot);
+            PanelUi.BindClick(_recycleRoot, QueueSelectedForRecycle);
 
             // The hint strip is gone: vanilla never uses a persistent
             // instruction line, and this one was unreadable at 3.4pt and hidden
@@ -1191,8 +1176,8 @@ namespace QM_CentralManagement
             foreach (var tab in _categoryTabs)
             {
                 var selected = tab.Category == _category;
-                SetSurfaceSelected(tab.Background, selected);
-                SetCaptionColor(tab.Label, selected ? AccentColor : ValueColor);
+                PanelUi.SetSurfaceSelected(tab.Background, selected);
+                PanelUi.SetCaptionColor(tab.Label, selected ? PanelUi.AccentColor : PanelUi.ValueColor);
                 tab.Label.text = Localization.Get("qmcentral.category."
                                                   + tab.Category.ToString()
                                                       .ToLowerInvariant());
@@ -1210,8 +1195,8 @@ namespace QM_CentralManagement
                     continue;
                 tab.Detail = details[i];
                 var selected = tab.Detail == _detail;
-                SetSurfaceSelected(tab.Background, selected);
-                SetCaptionColor(tab.Label, selected ? AccentColor : ValueColor);
+                PanelUi.SetSurfaceSelected(tab.Background, selected);
+                PanelUi.SetCaptionColor(tab.Label, selected ? PanelUi.AccentColor : PanelUi.ValueColor);
                 tab.Label.text = Localization.Get("qmcentral.detail."
                                                   + tab.Detail.ToString()
                                                       .ToLowerInvariant());
@@ -1239,7 +1224,7 @@ namespace QM_CentralManagement
                 for (var column = 0; column < count && index < tabs.Count;
                      column++, index++)
                 {
-                    SetTopLeft((RectTransform)tabs[index].Root.transform,
+                    PanelUi.SetTopLeft((RectTransform)tabs[index].Root.transform,
                         PanelPad + column * (width + Gap), y,
                         column == count - 1 ? lastWidth : width, TabH);
                     tabs[index].Label.fontSize = 7f;
@@ -1271,7 +1256,7 @@ namespace QM_CentralManagement
             {
                 if (i >= visibleCount)
                     continue;
-                SetTopLeft((RectTransform)_detailTabs[i].Root.transform,
+                PanelUi.SetTopLeft((RectTransform)_detailTabs[i].Root.transform,
                     PanelPad + i * (width + Gap), _detailRowY,
                     i == visibleCount - 1 ? lastWidth : width, TabH);
                 _detailTabs[i].Label.fontSize = 7f;
@@ -1336,12 +1321,12 @@ namespace QM_CentralManagement
                 var selected = selectedUnits > 0;
                 VanillaSkin.SetSprite(card.Background,
                     selected ? VanillaSkin.SlotSelected : VanillaSkin.SlotNormal,
-                    selected ? SelectedColor : CardColor);
+                    selected ? PanelUi.SelectedColor : PanelUi.CardColor);
                 card.SelectButton.SetInteractable(entry.HasRecyclable);
                 card.SelectLabel.text = selected
                     ? "×" + selectedUnits
                     : Localization.Get("qmcentral.select");
-                SetCaptionColor(card.SelectLabel, selected ? AccentColor : OffColor);
+                PanelUi.SetCaptionColor(card.SelectLabel, selected ? PanelUi.AccentColor : PanelUi.OffColor);
                 card.SelectLabel.font = Localization.GetActualFont();
             }
             var showEmpty = _filtered.Count == 0;
@@ -1476,7 +1461,7 @@ namespace QM_CentralManagement
             _detail = CargoDetail.Any;
             _sortMode = SortMode.Name;
             _implantSlotFilter = null;
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             _scrollRow = 0;
             ApplyResponsiveLayout();
             RefreshFiltered();
@@ -1510,7 +1495,7 @@ namespace QM_CentralManagement
                 CloseDropdown(_operatorDropdownRoot);
                 return;
             }
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             RebuildOperatorDropdown();
             _operatorDropdownRoot.SetActive(true);
             _operatorDropdownRoot.transform.SetAsLastSibling();
@@ -1536,7 +1521,7 @@ namespace QM_CentralManagement
             for (var i = 0; i < operators.Count; i++)
             {
                 var mercenary = operators[i];
-                var row = CreateButtonRoot("Operator" + i,
+                var row = PanelUi.CreateButtonRoot("Operator" + i,
                     _operatorDropdownRoot.transform, 2f,
                     -2f - i * rowHeight, width - 4f, rowHeight - 1f,
                     out var rowBackground, out var label);
@@ -1544,9 +1529,9 @@ namespace QM_CentralManagement
                 label.fontSize = 6f;
                 label.alignment = TextAlignmentOptions.MidlineLeft;
                 label.margin = new Vector4(4f, 0f, 2f, 0f);
-                SetSurfaceSelected(rowBackground,
+                PanelUi.SetSurfaceSelected(rowBackground,
                     ReferenceEquals(mercenary, _mercenary));
-                BindClick(row, () => SelectOperatorFromDropdown(mercenary));
+                PanelUi.BindClick(row, () => SelectOperatorFromDropdown(mercenary));
                 _operatorDropdownRows.Add(row);
             }
         }
@@ -1574,8 +1559,7 @@ namespace QM_CentralManagement
                 CloseDropdown(_sortDropdownRoot);
                 return;
             }
-            CloseDropdown(_slotFilterDropdownRoot);
-            CloseDropdown(_operatorDropdownRoot);
+            CloseAllDropdowns();
             RebuildSortDropdown();
             _sortDropdownRoot.SetActive(true);
             _sortDropdownRoot.transform.SetAsLastSibling();
@@ -1583,7 +1567,7 @@ namespace QM_CentralManagement
 
         private void RebuildSortDropdown()
         {
-            ClearDropdownRows(_sortDropdownRows);
+            PanelUi.ClearDropdownRows(_sortDropdownRows);
             var modes = GetAvailableSortModes();
             const float rowHeight = 14f;
             var width = _operatorPanelVisible ? 88f : 108f;
@@ -1592,7 +1576,7 @@ namespace QM_CentralManagement
             for (var i = 0; i < modes.Count; i++)
             {
                 var mode = modes[i];
-                var row = CreateButtonRoot("Sort" + mode,
+                var row = PanelUi.CreateButtonRoot("Sort" + mode,
                     _sortDropdownRoot.transform, 2f, -2f - i * rowHeight,
                     width - 4f, rowHeight - 1f, out var background,
                     out var label);
@@ -1600,8 +1584,8 @@ namespace QM_CentralManagement
                 label.fontSize = 6f;
                 label.alignment = TextAlignmentOptions.MidlineLeft;
                 label.margin = new Vector4(4f, 0f, 2f, 0f);
-                SetSurfaceSelected(background, mode == _sortMode);
-                BindClick(row, () => SelectSortMode(mode));
+                PanelUi.SetSurfaceSelected(background, mode == _sortMode);
+                PanelUi.BindClick(row, () => SelectSortMode(mode));
                 _sortDropdownRows.Add(row);
             }
         }
@@ -1633,8 +1617,7 @@ namespace QM_CentralManagement
                 CloseDropdown(_slotFilterDropdownRoot);
                 return;
             }
-            CloseDropdown(_sortDropdownRoot);
-            CloseDropdown(_operatorDropdownRoot);
+            CloseAllDropdowns();
             RebuildSlotFilterDropdown();
             _slotFilterDropdownRoot.SetActive(true);
             _slotFilterDropdownRoot.transform.SetAsLastSibling();
@@ -1642,7 +1625,7 @@ namespace QM_CentralManagement
 
         private void RebuildSlotFilterDropdown()
         {
-            ClearDropdownRows(_slotFilterDropdownRows);
+            PanelUi.ClearDropdownRows(_slotFilterDropdownRows);
             var slots = GetAvailableImplantSlots();
             slots.Insert(0, null);
             const float rowHeight = 14f;
@@ -1652,7 +1635,7 @@ namespace QM_CentralManagement
             for (var i = 0; i < slots.Count; i++)
             {
                 var slot = slots[i];
-                var row = CreateButtonRoot("Slot" + i,
+                var row = PanelUi.CreateButtonRoot("Slot" + i,
                     _slotFilterDropdownRoot.transform, 2f,
                     -2f - i * rowHeight, width - 4f, rowHeight - 1f,
                     out var background, out var label);
@@ -1662,9 +1645,9 @@ namespace QM_CentralManagement
                 label.fontSize = 6f;
                 label.alignment = TextAlignmentOptions.MidlineLeft;
                 label.margin = new Vector4(4f, 0f, 2f, 0f);
-                SetSurfaceSelected(background, string.Equals(slot,
+                PanelUi.SetSurfaceSelected(background, string.Equals(slot,
                     _implantSlotFilter, StringComparison.OrdinalIgnoreCase));
-                BindClick(row, () => SelectImplantSlot(slot));
+                PanelUi.BindClick(row, () => SelectImplantSlot(slot));
                 _slotFilterDropdownRows.Add(row);
             }
         }
@@ -1719,13 +1702,6 @@ namespace QM_CentralManagement
             return localized == key ? slot : localized;
         }
 
-        private void CloseFilterDropdowns()
-        {
-            CloseDropdown(_sortDropdownRoot);
-            CloseDropdown(_slotFilterDropdownRoot);
-            CloseDropdown(_presetDropdownRoot);
-        }
-
         private static void CloseDropdown(GameObject dropdown)
         {
             if (dropdown == null)
@@ -1733,26 +1709,9 @@ namespace QM_CentralManagement
             var wasVisible = dropdown.activeInHierarchy;
             dropdown.SetActive(false);
             if (wasVisible)
-                ConsumePointerRelease();
+                ModInputGate.ConsumePointerRelease();
         }
 
-        private static void ConsumePointerRelease()
-        {
-            // Unity Button.onClick is invoked on mouse-up.  Once a dropdown
-            // hides, the same physical release can expose an ItemSlot below
-            // to the game's raw DragController during the remainder of the
-            // frame.  Block both input paths as one atomic popup-close action.
-            UI.Drag.Pause(0.18f);
-            _blockedInputReleaseFrame = Time.frameCount;
-        }
-
-        private static void ClearDropdownRows(List<GameObject> rows)
-        {
-            foreach (var row in rows)
-                if (row != null)
-                    Destroy(row);
-            rows.Clear();
-        }
 
         private void CycleOperator(int direction)
         {
@@ -1785,7 +1744,7 @@ namespace QM_CentralManagement
                 return true;
             if (!IsCentralItemSlot(slot))
                 return true;
-            if (Time.frameCount == _blockedInputReleaseFrame)
+            if (ModInputGate.IsFrameBlocked)
                 return false;
 
             // DragSweep calls again when a refreshed aggregate card receives
@@ -1953,7 +1912,7 @@ namespace QM_CentralManagement
             // meant re-selecting the slot after every switch. Leaving the
             // category still clears it (SelectCategory), which is the boundary
             // where the filter stops being meaningful.
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             _scrollRow = 0;
             ApplyResponsiveLayout();
             RefreshFiltered();
@@ -2286,7 +2245,7 @@ namespace QM_CentralManagement
             _implantSlotFilter = null;
             _scrollRow = 0;
             _search?.SetTextWithoutNotify(string.Empty);
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             ApplyResponsiveLayout();
             RefreshFiltered();
         }
@@ -2561,7 +2520,19 @@ namespace QM_CentralManagement
 
         private bool MatchesCategory(CentralInventoryEntry entry)
         {
-            switch (_category)
+            return MatchesCategory(entry, _category);
+        }
+
+        /// <summary>
+        /// Which tab an entry belongs under. Static and category-parameterised
+        /// so SPECIAL can be defined as the complement of the others rather
+        /// than as a second, hand-maintained list of ItemClasses that had to be
+        /// kept in sync with every case below.
+        /// </summary>
+        private static bool MatchesCategory(CentralInventoryEntry entry,
+            CargoCategory category)
+        {
+            switch (category)
             {
                 case CargoCategory.All:
                     return true;
@@ -2618,10 +2589,33 @@ namespace QM_CentralManagement
                            || entry.ItemClass == ItemClass.IndustrialBarter
                            || entry.ItemClass == ItemClass.ValuableBarter;
                 case CargoCategory.Special:
-                    return !IsStandardClass(entry.ItemClass);
+                    // Everything no other tab claims. Derived, never listed:
+                    // a hand-written ItemClass list here drifted out of sync
+                    // with the cases above, and the only symptom was an item
+                    // quietly appearing in no tab at all.
+                    return !IsClaimedByAnyCategory(entry);
                 default:
                     return true;
             }
+        }
+
+        /// <summary>The tabs that claim entries by content, in tab order.</summary>
+        private static readonly CargoCategory[] ClaimingCategories =
+        {
+            CargoCategory.Weapons, CargoCategory.Equipment,
+            CargoCategory.Ammo, CargoCategory.Supplies,
+            CargoCategory.Augments, CargoCategory.Materials,
+            CargoCategory.Barter,
+        };
+
+        private static bool IsClaimedByAnyCategory(CentralInventoryEntry entry)
+        {
+            foreach (var category in ClaimingCategories)
+            {
+                if (MatchesCategory(entry, category))
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -2821,40 +2815,6 @@ namespace QM_CentralManagement
             }
         }
 
-        private static bool IsStandardClass(ItemClass itemClass)
-        {
-            return itemClass == ItemClass.Weapon
-                   || itemClass == ItemClass.ThrowableWeapon
-                   || itemClass == ItemClass.Helmet
-                   || itemClass == ItemClass.Armor
-                   || itemClass == ItemClass.Leggings
-                   || itemClass == ItemClass.Boots
-                   || itemClass == ItemClass.Backpack
-                   || itemClass == ItemClass.Vest
-                   || itemClass == ItemClass.Ammo
-                   || itemClass == ItemClass.Grenade
-                   || itemClass == ItemClass.Mine
-                   || itemClass == ItemClass.Turret
-                   || itemClass == ItemClass.Food
-                   || itemClass == ItemClass.Drink
-                   || itemClass == ItemClass.Alcohol
-                   || itemClass == ItemClass.Pills
-                   || itemClass == ItemClass.Syringe
-                   || itemClass == ItemClass.Medpack
-                   || itemClass == ItemClass.Dressing
-                   || itemClass == ItemClass.RepairKit
-                   || itemClass == ItemClass.BioAug
-                   || itemClass == ItemClass.CyberneticAug
-                   || itemClass == ItemClass.QuasiAug
-                   || itemClass == ItemClass.Parts
-                   || itemClass == ItemClass.Data
-                   || itemClass == ItemClass.Blueprint
-                   || itemClass == ItemClass.Organ
-                   || itemClass == ItemClass.MilitaryBarter
-                   || itemClass == ItemClass.ScienceBarter
-                   || itemClass == ItemClass.IndustrialBarter
-                   || itemClass == ItemClass.ValuableBarter;
-        }
 
         private static string GetOperatorDisplayName(Mercenary mercenary)
         {
@@ -2916,8 +2876,7 @@ namespace QM_CentralManagement
         {
             if (UI.Drag.IsDragging)
                 return;
-            CloseFilterDropdowns();
-            CloseDropdown(_operatorDropdownRoot);
+            CloseAllDropdowns();
             if (_augmentationMode)
             {
                 Plugin.OpenCentralArsenal(_mercenary,
@@ -2939,145 +2898,215 @@ namespace QM_CentralManagement
             _root?.transform.SetAsLastSibling();
         }
 
+        // --- measured layout ------------------------------------------------
+        // MeasurePanelLayout writes these from the real design surface; every
+        // Layout* method below reads them instead of recomputing. Splitting
+        // measurement from placement is what lets a section be read on its own
+        // -- this used to be one 226-line method.
+        private float _layoutPanelH;
+        private float _layoutGridTop;
+        private float _layoutGridBottom;
+        private float _layoutFooterY;
+
+        // Header cluster, right to left from the header's own inner edge.
+        private const float CloseW = 40f;
+        private const float GearW = 64f;
+        private const float OperatorW = 79f;
+        private const float ArrowW = 13f;
+        private const float HeaderInset = 2f;
+        private const float HeaderControlH = 15f;
+        private const float TitleX = 19f;
+
+        // Search row.
+        private const float SearchRowY = -25f;
+        private const float SortWideW = 96f;
+        private const float SortNarrowW = 66f;
+        private const float DropdownWideW = 120f;
+        private const float DropdownNarrowW = 96f;
+        private const float DropdownH = 20f;
+
+        private const float CategoryRowY = -44f;
+        private const float ClearFiltersW = 108f;
+
+        // Footer action cluster.
+        private const float SelectW = 62f;
+        private const float ClearW = 40f;
+        private const float RecycleW = 64f;
+        private const float PageArrowWideW = 15f;
+        private const float PageArrowNarrowW = 13f;
+        private const float PageLabelWideW = 34f;
+        private const float PageLabelNarrowW = 26f;
+        // Below this the "{0} TYPES / {1} UNITS" sentence does not fit and the
+        // readout drops to the bare "21 / 4,096" form.
+        private const float CountCompactW = 96f;
+
         private void ApplyResponsiveLayout()
         {
             if (_root == null || _headerRoot == null)
                 return;
 
-            var side = _operatorPanelVisible;
-            var panelWidth = CurrentPanelWidth;
-            var innerWidth = CurrentInnerWidth;
+            MeasurePanelLayout();
+            LayoutHeader();
+            LayoutFilterRow();
+            LayoutFilterTabs();
+            LayoutCardGrid();
+            LayoutEmptyState();
+            LayoutFooter();
+            RefreshOperatorPanelButton();
+            ApplyPresetLayout();
+        }
 
-            // Measure, never assume: MGSC.UIScaleFixer swaps the CanvasScaler
-            // by aspect ratio, so the design space is 640x360 at 16:9,
-            // 640x480 at 4:3, ~853x360 at 21:9 and 1280x360 at 32:9.  Height
-            // is what varies below 2.3:1 (that is the case this clamp is for);
-            // above it, width is what grows -- which is why this panel is
-            // centre-anchored below and not pinned to a corner.
-            // See PanelUi.DesignSurfaceSize for the full table.
+        /// <summary>
+        /// Measure, never assume: MGSC.UIScaleFixer swaps the CanvasScaler by
+        /// aspect ratio, so the design space is 640x360 at 16:9, 640x480 at
+        /// 4:3, ~853x360 at 21:9 and 1280x360 at 32:9. Height is what varies
+        /// below 2.3:1 (that is the case this clamp is for); above it, width is
+        /// what grows -- which is why this panel is centre-anchored and not
+        /// pinned to a corner. See PanelUi.DesignSurfaceSize for the table.
+        /// </summary>
+        private void MeasurePanelLayout()
+        {
             var canvasHeight = _root.transform.parent is RectTransform parentRect
                 ? parentRect.rect.height
                 : 360f;
-            var panelHeight = Mathf.Floor(
+            _layoutPanelH = Mathf.Floor(
                 Mathf.Clamp(canvasHeight - 16f, 180f, 344f));
+            _layoutFooterY = -(_layoutPanelH - PanelPad - RowH);
 
             var panelRect = (RectTransform)_root.transform;
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0f, 0.5f);
-            panelRect.anchoredPosition = side
+            panelRect.anchoredPosition = _operatorPanelVisible
                 ? new Vector2(38f, 0f)
                 : new Vector2(-312f, 0f);
-            panelRect.sizeDelta = new Vector2(panelWidth, panelHeight);
+            panelRect.sizeDelta = new Vector2(CurrentPanelWidth, _layoutPanelH);
+        }
 
-            SetTopLeft((RectTransform)_headerRoot.transform,
+        /// <summary>
+        /// The header cluster is laid out RIGHT TO LEFT from the header's own
+        /// inner edge. It used to start at panelWidth - 189 while these
+        /// controls are children of the header, whose width is only innerWidth
+        /// (panelWidth - 8), so CLOSE ended 6px past the frame. Measuring back
+        /// from the parent's edge cannot overflow.
+        /// </summary>
+        private void LayoutHeader()
+        {
+            var innerWidth = CurrentInnerWidth;
+            PanelUi.SetTopLeft((RectTransform)_headerRoot.transform,
                 PanelPad, -PanelPad, innerWidth, HeaderH);
-            SetTopLeft((RectTransform)_headerIconRoot.transform,
+            PanelUi.SetTopLeft((RectTransform)_headerIconRoot.transform,
                 2f, -2f, 15f, 15f);
-            // Header cluster, laid out RIGHT TO LEFT from the header's own
-            // inner edge.  It used to start at panelWidth - 189 while these
-            // controls are children of the header, whose width is only
-            // innerWidth (panelWidth - 8), so CLOSE ended 6px past the frame.
-            // Measuring back from the parent's edge cannot overflow.
-            const float closeW = 40f;
-            const float gearW = 64f;
-            const float operatorW = 79f;
-            const float arrowW = 13f;
-            const float headerInset = 2f;
 
             _previousOperatorRoot.SetActive(false);
             _nextOperatorRoot.SetActive(false);
 
-            var headerX = innerWidth - headerInset - closeW;
-            SetTopLeft((RectTransform)_closeRoot.transform,
-                headerX, -2f, closeW, 15f);
-            headerX -= Gap + gearW;
-            SetTopLeft((RectTransform)_operatorPanelRoot.transform,
-                headerX, -2f, gearW, 15f);
-            headerX -= Gap + operatorW;
-            SetTopLeft((RectTransform)_operatorRoot.transform,
-                headerX, -2f, operatorW, 15f);
-            SetTopLeft((RectTransform)_previousOperatorRoot.transform,
-                headerX, -2f, arrowW, 15f);
-            SetTopLeft((RectTransform)_nextOperatorRoot.transform,
-                headerX + operatorW - arrowW, -2f, arrowW, 15f);
+            var headerX = innerWidth - HeaderInset - CloseW;
+            PanelUi.SetTopLeft((RectTransform)_closeRoot.transform,
+                headerX, -2f, CloseW, HeaderControlH);
+            headerX -= Gap + GearW;
+            PanelUi.SetTopLeft((RectTransform)_operatorPanelRoot.transform,
+                headerX, -2f, GearW, HeaderControlH);
+            headerX -= Gap + OperatorW;
+            PanelUi.SetTopLeft((RectTransform)_operatorRoot.transform,
+                headerX, -2f, OperatorW, HeaderControlH);
+            PanelUi.SetTopLeft((RectTransform)_previousOperatorRoot.transform,
+                headerX, -2f, ArrowW, HeaderControlH);
+            PanelUi.SetTopLeft((RectTransform)_nextOperatorRoot.transform,
+                headerX + OperatorW - ArrowW, -2f, ArrowW, HeaderControlH);
 
             // The title takes whatever is left, so it can never run under the
             // cluster no matter how the panel is sized.
-            SetTopLeft(_title.rectTransform, 19f, 0f,
-                Mathf.Max(0f, headerX - Gap - 19f), HeaderH);
+            PanelUi.SetTopLeft(_title.rectTransform, TitleX, 0f,
+                Mathf.Max(0f, headerX - Gap - TitleX), HeaderH);
+        }
 
-            // --- search row --------------------------------------------------
-            // Fixed widths for SORT / SLOT: the old layout sized them from the
-            // current label text, so the search field jumped under the cursor
-            // whenever the selected sort or slot changed.
-            const float searchRowY = -25f;
+        /// <summary>
+        /// Search field plus the SLOT and SORT triggers. Their widths are
+        /// FIXED: the old layout sized them from the current label text, so the
+        /// search field jumped under the cursor whenever the selection changed.
+        /// </summary>
+        private void LayoutFilterRow()
+        {
+            var side = _operatorPanelVisible;
+            var innerWidth = CurrentInnerWidth;
             var showSlotFilter = ShouldShowImplantSlotFilter();
-            var sortWidth = side ? 66f : 96f;
+            var sortWidth = side ? SortNarrowW : SortWideW;
             var slotWidth = showSlotFilter ? sortWidth : 0f;
             var searchWidth = innerWidth - sortWidth - Gap
                               - (showSlotFilter ? slotWidth + Gap : 0f);
-            SetTopLeft((RectTransform)_searchRoot.transform,
-                PanelPad, searchRowY, searchWidth, RowH);
+
+            PanelUi.SetTopLeft((RectTransform)_searchRoot.transform,
+                PanelPad, SearchRowY, searchWidth, RowH);
             var auxiliaryX = PanelPad + searchWidth + Gap;
             _slotFilterRoot.SetActive(showSlotFilter);
             if (showSlotFilter)
             {
-                SetTopLeft((RectTransform)_slotFilterRoot.transform,
-                    auxiliaryX, searchRowY, slotWidth, RowH);
+                PanelUi.SetTopLeft((RectTransform)_slotFilterRoot.transform,
+                    auxiliaryX, SearchRowY, slotWidth, RowH);
                 auxiliaryX += slotWidth + Gap;
             }
             else
             {
+                // The control just vanished; its list must not stay open.
                 CloseDropdown(_slotFilterDropdownRoot);
             }
-            SetTopLeft((RectTransform)_sortRoot.transform,
-                auxiliaryX, searchRowY, sortWidth, RowH);
+            PanelUi.SetTopLeft((RectTransform)_sortRoot.transform,
+                auxiliaryX, SearchRowY, sortWidth, RowH);
 
-            var dropdownWidth = side ? 96f : 120f;
-            SetTopLeft((RectTransform)_slotFilterDropdownRoot.transform,
-                showSlotFilter
-                    ? PanelPad + searchWidth + Gap
-                    : auxiliaryX,
-                searchRowY - RowH - Gap, dropdownWidth, 20f);
-            SetTopLeft((RectTransform)_sortDropdownRoot.transform,
-                panelWidth - PanelPad - dropdownWidth,
-                searchRowY - RowH - Gap, dropdownWidth, 20f);
+            var dropdownWidth = side ? DropdownNarrowW : DropdownWideW;
+            var dropdownY = SearchRowY - RowH - Gap;
+            PanelUi.SetTopLeft((RectTransform)_slotFilterDropdownRoot.transform,
+                showSlotFilter ? PanelPad + searchWidth + Gap : auxiliaryX,
+                dropdownY, dropdownWidth, DropdownH);
+            PanelUi.SetTopLeft((RectTransform)_sortDropdownRoot.transform,
+                CurrentPanelWidth - PanelPad - dropdownWidth,
+                dropdownY, dropdownWidth, DropdownH);
+        }
 
-            // --- filter tabs -------------------------------------------------
-            // Nine categories fit one flush row when the panel is wide; the
-            // narrow layout splits 5 + 4 and stretches BOTH rows edge to edge,
-            // so neither ends in the empty cell the old 5-column grid left.
-            var categoryBottom = side
-                ? LayoutTabRows(_categoryTabs, -44f, new[] { 5, 4 }, innerWidth)
-                : LayoutTabRows(_categoryTabs, -44f, new[] { 9 }, innerWidth);
-
+        /// <summary>
+        /// Nine categories fit one flush row when the panel is wide; the narrow
+        /// layout splits 5 + 4 and stretches BOTH rows edge to edge, so neither
+        /// ends in the empty cell the old 5-column grid left behind.
+        /// </summary>
+        private void LayoutFilterTabs()
+        {
+            var innerWidth = CurrentInnerWidth;
+            var categoryBottom = _operatorPanelVisible
+                ? LayoutTabRows(_categoryTabs, CategoryRowY, new[] { 5, 4 },
+                    innerWidth)
+                : LayoutTabRows(_categoryTabs, CategoryRowY, new[] { 9 },
+                    innerWidth);
             _detailRowY = categoryBottom - Gap;
             LayoutDetailTabs(GetDetails(_category));
+        }
 
-            // --- card grid ---------------------------------------------------
-            var gridTop = _detailRowY - TabH - Gap;
-            var footerY = -(panelHeight - PanelPad - RowH);
-            var gridBottom = footerY + Gap;
+        private void LayoutCardGrid()
+        {
+            var innerWidth = CurrentInnerWidth;
+            _layoutGridTop = _detailRowY - TabH - Gap;
+            _layoutGridBottom = _layoutFooterY + Gap;
 
-            _cardColumns = side ? 2 : 4;
+            _cardColumns = _operatorPanelVisible ? 2 : 4;
             _cardRows = Mathf.Clamp(
-                Mathf.FloorToInt((gridTop - gridBottom + CardGap) / (CardH + CardGap)),
+                Mathf.FloorToInt(
+                    (_layoutGridTop - _layoutGridBottom + CardGap)
+                    / (CardH + CardGap)),
                 1, MaxCardsPerPage / _cardColumns);
 
-            // Integer cell width, with the rounding remainder handed to the last
-            // column so the grid still lands flush on both edges.  Fractional
-            // widths would put every other card on a half pixel.
+            // Integer cell width, with the rounding remainder handed to the
+            // last column so the grid still lands flush on both edges.
+            // Fractional widths would put every other card on a half pixel.
             var cardWidth = Mathf.Floor(
                 (innerWidth - CardGap * (_cardColumns - 1)) / _cardColumns);
-            var lastCardWidth = innerWidth - (cardWidth + CardGap) * (_cardColumns - 1);
+            var lastCardWidth =
+                innerWidth - (cardWidth + CardGap) * (_cardColumns - 1);
 
             if (_cardWellRoot != null)
             {
-                SetTopLeft((RectTransform)_cardWellRoot.transform,
-                    PanelPad - 2f, gridTop + 2f,
-                    innerWidth + 4f,
-                    Mathf.Max(0f, gridTop - gridBottom + 4f));
+                PanelUi.SetTopLeft((RectTransform)_cardWellRoot.transform,
+                    PanelPad - 2f, _layoutGridTop + 2f, innerWidth + 4f,
+                    Mathf.Max(0f, _layoutGridTop - _layoutGridBottom + 4f));
             }
 
             for (var i = 0; i < _cards.Length; i++)
@@ -3085,85 +3114,91 @@ namespace QM_CentralManagement
                 var card = _cards[i];
                 var column = i % _cardColumns;
                 var row = i / _cardColumns;
-                var width = column == _cardColumns - 1 ? lastCardWidth : cardWidth;
+                var width = column == _cardColumns - 1
+                    ? lastCardWidth
+                    : cardWidth;
 
-                SetTopLeft((RectTransform)card.Root.transform,
+                PanelUi.SetTopLeft((RectTransform)card.Root.transform,
                     PanelPad + column * (cardWidth + CardGap),
-                    gridTop - row * (CardH + CardGap),
-                    width, CardH);
-                SetTopLeft((RectTransform)card.SlotHost,
+                    _layoutGridTop - row * (CardH + CardGap), width, CardH);
+                PanelUi.SetTopLeft((RectTransform)card.SlotHost,
                     3f, -4f, SlotColumnW, SlotModule);
                 // The name gets the whole line minus the icon column; the count
                 // and the chip share the line below it.
-                SetTopLeft(card.Name.rectTransform,
+                PanelUi.SetTopLeft(card.Name.rectTransform,
                     NameX, -3f, width - NameX - 3f, 14f);
-                SetTopLeft(card.Quantity.rectTransform,
-                    NameX, -17f, Mathf.Max(20f, width - NameX - ChipW - 5f), 12f);
-                SetTopLeft((RectTransform)card.SelectRoot.transform,
+                PanelUi.SetTopLeft(card.Quantity.rectTransform, NameX, -17f,
+                    Mathf.Max(20f, width - NameX - ChipW - 5f), 12f);
+                PanelUi.SetTopLeft((RectTransform)card.SelectRoot.transform,
                     width - ChipW - 3f, -17f, ChipW, TabH);
                 card.SelectLabel.fontSize = 7f;
             }
+        }
 
-            // --- empty state and footer ---------------------------------------
-            // Centre the empty message in the measured grid instead of at a
-            // magic offset that only lined up at one panel height.
+        /// <summary>
+        /// Centres the "nothing matches" message and its way out on the
+        /// MEASURED grid, instead of at a magic offset that only lined up at
+        /// one panel height.
+        /// </summary>
+        private void LayoutEmptyState()
+        {
+            var innerWidth = CurrentInnerWidth;
+            var center = _layoutGridTop
+                         - (_layoutGridTop - _layoutGridBottom) * 0.5f;
             if (_clearFiltersRoot != null)
             {
-                const float clearFiltersW = 108f;
-                SetTopLeft((RectTransform)_clearFiltersRoot.transform,
-                    Mathf.Floor(PanelPad + (innerWidth - clearFiltersW) * 0.5f),
-                    gridTop - (gridTop - gridBottom) * 0.5f - 4f,
-                    clearFiltersW, RowH);
+                PanelUi.SetTopLeft((RectTransform)_clearFiltersRoot.transform,
+                    Mathf.Floor(PanelPad + (innerWidth - ClearFiltersW) * 0.5f),
+                    center - 4f, ClearFiltersW, RowH);
             }
-            SetTopLeft(_empty.rectTransform, PanelPad,
-                gridTop - (gridTop - gridBottom) * 0.5f + 20f,
+            PanelUi.SetTopLeft(_empty.rectTransform, PanelPad, center + 20f,
                 innerWidth, 40f);
+        }
 
-            // Right-aligned action cluster, sized from its own contents so it
-            // stays put when the panel width changes.
-            // The page controls hold short text ("<", "1/2"), so tightening
-            // them in the narrow layout costs nothing and buys the status
-            // readout back the room it needs.
-            var pageArrowW = side ? 13f : 15f;
-            var pageLabelW = side ? 26f : 34f;
-            const float clearW = 40f;
-            const float selectW = 62f;
-            const float recycleW = 64f;
-            var clusterW = selectW + Gap + clearW + Gap + pageArrowW + Gap
-                           + pageLabelW + Gap + pageArrowW + Gap + recycleW;
-            var footerX = Mathf.Floor(panelWidth - PanelPad - clusterW);
+        /// <summary>
+        /// Right-aligned action cluster, sized from its own contents so it
+        /// stays put when the panel width changes. The page controls hold short
+        /// text, so tightening them in the narrow layout costs nothing and buys
+        /// the status readout back the room it needs.
+        /// </summary>
+        private void LayoutFooter()
+        {
+            var side = _operatorPanelVisible;
+            var pageArrowW = side ? PageArrowNarrowW : PageArrowWideW;
+            var pageLabelW = side ? PageLabelNarrowW : PageLabelWideW;
+            var clusterW = SelectW + Gap + ClearW + Gap + pageArrowW + Gap
+                           + pageLabelW + Gap + pageArrowW + Gap + RecycleW;
+            var footerX = Mathf.Floor(
+                CurrentPanelWidth - PanelPad - clusterW);
 
-            // No minimum width here.  A Mathf.Max floor used to force the
+            // No minimum width here. A Mathf.Max floor used to force the
             // readout wider than the space actually left, so in the narrow
-            // layout it ran straight under SELECT FILTER.  Whatever is left is
+            // layout it ran straight under SELECT FILTER. Whatever is left is
             // what it gets -- and if that is too little for the full sentence,
-            // the text drops to a compact form rather than being clipped to
-            // something like "21 TYPES /".
+            // the text drops to a compact form rather than being clipped.
             var countWidth = Mathf.Max(0f, footerX - PanelPad - Gap);
-            _countCompact = countWidth < 96f;
-            SetTopLeft(_count.rectTransform, PanelPad, footerY,
+            _countCompact = countWidth < CountCompactW;
+            PanelUi.SetTopLeft(_count.rectTransform, PanelPad, _layoutFooterY,
                 countWidth, RowH);
 
             var x = footerX;
-            SetTopLeft((RectTransform)_selectFilteredRoot.transform,
-                x, footerY, selectW, RowH);
-            x += selectW + Gap;
-            SetTopLeft((RectTransform)_clearRoot.transform,
-                x, footerY, clearW, RowH);
-            x += clearW + Gap;
-            SetTopLeft((RectTransform)_previousPageRoot.transform,
-                x, footerY, pageArrowW, RowH);
+            PanelUi.SetTopLeft((RectTransform)_selectFilteredRoot.transform,
+                x, _layoutFooterY, SelectW, RowH);
+            x += SelectW + Gap;
+            PanelUi.SetTopLeft((RectTransform)_clearRoot.transform,
+                x, _layoutFooterY, ClearW, RowH);
+            x += ClearW + Gap;
+            PanelUi.SetTopLeft((RectTransform)_previousPageRoot.transform,
+                x, _layoutFooterY, pageArrowW, RowH);
             x += pageArrowW + Gap;
-            SetTopLeft(_page.rectTransform, x, footerY, pageLabelW, RowH);
+            PanelUi.SetTopLeft(_page.rectTransform,
+                x, _layoutFooterY, pageLabelW, RowH);
             x += pageLabelW + Gap;
-            SetTopLeft((RectTransform)_nextPageRoot.transform,
-                x, footerY, pageArrowW, RowH);
+            PanelUi.SetTopLeft((RectTransform)_nextPageRoot.transform,
+                x, _layoutFooterY, pageArrowW, RowH);
             x += pageArrowW + Gap;
-            SetTopLeft((RectTransform)_recycleRoot.transform,
-                x, footerY, recycleW, RowH);
-
-            RefreshOperatorPanelButton();
-            ApplyPresetLayout();
+            PanelUi.SetTopLeft((RectTransform)_recycleRoot.transform,
+                x, _layoutFooterY, RecycleW, RowH);
         }
 
         private void RefreshOperatorPanelButton()
@@ -3198,9 +3233,7 @@ namespace QM_CentralManagement
         {
             CloseItemMenu();
             ClosePresetPopup();
-            CloseDropdown(_presetDropdownRoot);
-            CloseDropdown(_operatorDropdownRoot);
-            CloseFilterDropdowns();
+            CloseAllDropdowns();
             UI.Back(isBackButtonClicked: true);
         }
 
@@ -3222,8 +3255,7 @@ namespace QM_CentralManagement
                 UI.Drag.Pause(0.08f);
                 return;
             }
-            if (_presetOverlayRoot != null
-                && _presetOverlayRoot.activeInHierarchy)
+            if (IsPresetPopupOpen)
             {
                 UI.Drag.Pause(0.08f);
                 if (Input.GetKeyDown(KeyCode.Escape))
@@ -3248,14 +3280,7 @@ namespace QM_CentralManagement
         {
             if (_root == null || UI.Drag.IsDragging
                 || UI.IsShowing<CommonContextMenu>()
-                || (_operatorDropdownRoot != null
-                    && _operatorDropdownRoot.activeInHierarchy)
-                || (_sortDropdownRoot != null
-                    && _sortDropdownRoot.activeInHierarchy)
-                || (_slotFilterDropdownRoot != null
-                    && _slotFilterDropdownRoot.activeInHierarchy)
-                || (_presetDropdownRoot != null
-                    && _presetDropdownRoot.activeInHierarchy))
+                || HasOpenDropdown())
             {
                 return;
             }
@@ -3280,332 +3305,6 @@ namespace QM_CentralManagement
             ReleaseItemSlots();
             if (ReferenceEquals(_instance, this))
                 _instance = null;
-        }
-
-        private static GameObject CreateButtonRoot(string name,
-            Transform parent, float x, float y, float width, float height,
-            out Image background, out TextMeshProUGUI label)
-        {
-            return CreateButtonRoot(name, parent, x, y, width, height, null,
-                out background, out label);
-        }
-
-        /// <summary>
-        /// Builds a vanilla CommonButton: sprite hover/press/disabled states,
-        /// the game's four caption colours and its ButtonClick sound, all of
-        /// which UnityEngine.UI.Button's ColorTint could not provide.
-        /// </summary>
-        private static GameObject CreateButtonRoot(string name,
-            Transform parent, float x, float y, float width, float height,
-            string tooltipTag, out Image background, out TextMeshProUGUI label)
-        {
-            var root = CreateUiObject(name, parent);
-            SetTopLeft((RectTransform)root.transform, x, y, width, height);
-
-            // CommonButton.OnEnable calls RefreshVisual, which dereferences
-            // background.sprite -- and AddComponent on an already-active object
-            // runs Awake and OnEnable immediately.  Assemble the whole control
-            // while the object is inactive, then restore its previous state.
-            var wasActive = root.activeSelf;
-            root.SetActive(false);
-
-            background = VanillaSkin.Slice(root, VanillaSkin.ButtonNormal,
-                CardColor);
-            // Integer quantisation of the old Mathf.Min(8, height * 0.48f),
-            // which produced 6.24 / 6.72 / 7.2 / 8.  Sub-pixel glyph sizes
-            // rasterise badly on a canvas whose referencePixelsPerUnit is 1.
-            var captionSize = height >= 17f ? 8f : (height >= 14f ? 7f : 6f);
-            label = CreateText("Label", root.transform, 1f, 0f,
-                width - 2f, height, TextContext.IgnoreSize, captionSize,
-                ValueColor, TextAlignmentOptions.Center);
-
-            // The caption STRETCHES to its button instead of carrying a fixed
-            // size.  Layout only ever resizes the button root, so a fixed-size
-            // caption stayed at whatever width it was built with -- which is
-            // why every tab and footer label drifted off centre, and why long
-            // ones spilled past their own tab.
-            StretchInto(label.rectTransform, 2f);
-
-            // Must precede the CommonButton: its Awake caches the
-            // GetComponent<ITooltipHandler>() it reuses for gamepad focus.
-            VanillaSkin.AddHint(root, tooltipTag);
-
-            var button = root.AddComponent<CommonButton>();
-            VanillaSkin.SuppressNavigation(button);
-            button.background = background;
-            button.captionText = label;
-            button.normalBgSprite = background.sprite;
-            button.hoverBgSprite = VanillaSkin.S(VanillaSkin.ButtonHover);
-            button.pressedBgSprite = VanillaSkin.S(VanillaSkin.ButtonPressed);
-            button.disabledBgSprite = VanillaSkin.S(VanillaSkin.ButtonDisabled);
-            button.normalCaptionColor = ValueColor;
-            button.hoverCaptionColor = BrightColor;
-            button.pressedCaptionColor = VanillaSkin.Palette.CaptionPressed;
-            button.disabledCaptionColor = VanillaSkin.Palette.CaptionDisabled;
-
-            root.SetActive(wasActive);
-            return root;
-        }
-
-        /// <summary>
-        /// Marks a button as destructive.  This keeps the standard
-        /// RegularButton_* frame and signals intent through the caption alone,
-        /// exactly as vanilla's own Recycle button does -- the red button art
-        /// only ships inside game-editor prefabs that never load at runtime.
-        /// </summary>
-        /// <summary>
-        /// A control that reads as "opens a list": the vanilla field frame plus
-        /// the caret sitting in the well that frame reserves on its right.
-        ///
-        /// The preset and operator selectors used to be a bare TextMeshProUGUI
-        /// with a Button dropped straight onto it -- no background and no
-        /// caret, so they looked like static labels and nothing suggested they
-        /// could be clicked at all.
-        /// </summary>
-        private static GameObject CreateDropdownTrigger(string name,
-            Transform parent, float x, float y, float width, float height,
-            out TextMeshProUGUI label)
-        {
-            var root = CreateUiObject(name, parent);
-            SetTopLeft((RectTransform)root.transform, x, y, width, height);
-
-            var wasActive = root.activeSelf;
-            root.SetActive(false);
-
-            var background = VanillaSkin.Slice(root,
-                VanillaSkin.FieldBackground, CardColor);
-
-            label = CreateText("Label", root.transform, 0f, 0f, width, height,
-                TextContext.IgnoreSize, 7f, ValueColor,
-                TextAlignmentOptions.MidlineLeft);
-            // Stretch, but keep the caret well on the right clear.
-            var labelRect = label.rectTransform;
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.pivot = new Vector2(0.5f, 0.5f);
-            labelRect.offsetMin = new Vector2(4f, 0f);
-            labelRect.offsetMax = new Vector2(-VanillaSkin.CaretWellW, 0f);
-
-            var caretObject = CreateUiObject("Caret", root.transform);
-            var caretRect = (RectTransform)caretObject.transform;
-            caretRect.anchorMin = new Vector2(1f, 0.5f);
-            caretRect.anchorMax = new Vector2(1f, 0.5f);
-            caretRect.pivot = new Vector2(0.5f, 0.5f);
-            caretRect.anchoredPosition = new Vector2(-9f, 0f);
-            caretRect.sizeDelta = new Vector2(VanillaSkin.CaretW,
-                VanillaSkin.CaretH);
-            VanillaSkin.Simple(caretObject, VanillaSkin.CaretArrow, ValueColor)
-                .raycastTarget = false;
-
-            var button = root.AddComponent<CommonButton>();
-            VanillaSkin.SuppressNavigation(button);
-            button.background = background;
-            button.captionText = label;
-            // dropdownBackground ships no hover or pressed variant, so the
-            // frame holds still and the caption colour carries the feedback.
-            button.normalBgSprite = background.sprite;
-            button.hoverBgSprite = background.sprite;
-            button.pressedBgSprite = background.sprite;
-            // dropdownBackground_blocked is not reachable at runtime -- nothing
-            // in a loaded scene references it, so the harvest never sees it.
-            // RegularButton_Disabled is, and it reads as a disabled frame,
-            // which is better than reusing the enabled art.
-            button.disabledBgSprite =
-                VanillaSkin.S(VanillaSkin.FieldBackgroundBlocked)
-                ?? VanillaSkin.S(VanillaSkin.ButtonDisabled)
-                ?? background.sprite;
-            button.normalCaptionColor = ValueColor;
-            button.hoverCaptionColor = BrightColor;
-            button.pressedCaptionColor = BrightColor;
-            button.disabledCaptionColor = VanillaSkin.Palette.CaptionDisabled;
-
-            root.SetActive(wasActive);
-            return root;
-        }
-
-        private static void MakeDangerButton(GameObject root,
-            TextMeshProUGUI label)
-        {
-            var button = ButtonOf(root);
-            if (button == null)
-                return;
-            button.normalCaptionColor = RecycleColor;
-            button.hoverCaptionColor = BrightColor;
-            if (label != null)
-                label.color = RecycleColor;
-        }
-
-        private static CommonButton ButtonOf(GameObject root)
-        {
-            return root == null ? null : root.GetComponent<CommonButton>();
-        }
-
-        private static void BindClick(GameObject root, Action action)
-        {
-            var button = ButtonOf(root);
-            if (button != null)
-                button.OnClick += (_, __) => action();
-        }
-
-        /// <summary>
-        /// Latched / selected state.  Two things to get right here:
-        ///
-        /// Never write Image.color once a sprite is assigned -- Image.color
-        /// multiplies against the art and would tint the vanilla frame.
-        ///
-        /// And do not use CommonButton.Select(bool), which only writes the
-        /// Image: OnPointerExit puts normalBgSprite straight back, so merely
-        /// hovering a latched control would silently un-latch it.  Move the
-        /// button's own normal state instead, and the latch survives the
-        /// pointer.
-        /// </summary>
-        private static void SetSurfaceSelected(Image image, bool selected)
-        {
-            if (image == null)
-                return;
-
-            var sprite = VanillaSkin.S(selected
-                ? VanillaSkin.ButtonPressed
-                : VanillaSkin.ButtonNormal);
-            if (sprite == null)
-            {
-                image.color = selected ? SelectedColor : CardColor;
-                return;
-            }
-
-            var button = image.GetComponent<CommonButton>();
-            if (button != null)
-                button.normalBgSprite = sprite;
-            image.sprite = sprite;
-            image.color = Color.white;
-        }
-
-        /// <summary>
-        /// Recolour a button caption durably.  Writing TMP.color alone is not
-        /// enough: CommonButton repaints captionText from its own four colour
-        /// fields on every enter, exit, down and up.
-        /// </summary>
-        private static void SetCaptionColor(TextMeshProUGUI label, Color color)
-        {
-            if (label == null)
-                return;
-            label.color = color;
-            var button = label.GetComponentInParent<CommonButton>();
-            if (button != null && ReferenceEquals(button.captionText, label))
-                button.normalCaptionColor = color;
-        }
-
-        private static GameObject CreateUiObject(string name, Transform parent)
-        {
-            var result = new GameObject(name, typeof(RectTransform),
-                typeof(CanvasRenderer));
-            result.transform.SetParent(parent, false);
-            result.layer = parent.gameObject.layer;
-            return result;
-        }
-
-        private static TextMeshProUGUI CreateText(string name, Transform parent,
-            float x, float y, float width, float height, TextContext context,
-            Color color, TextAlignmentOptions alignment)
-        {
-            return CreateText(name, parent, x, y, width, height, context, 0f,
-                color, alignment);
-        }
-
-        /// <summary>
-        /// <paramref name="sizeOverride"/> is honoured only for
-        /// TextContext.IgnoreSize, which the game's font presets deliberately
-        /// leave unstyled -- that is the vanilla-sanctioned way to take the
-        /// font asset and material without taking the type scale.  Sizes below
-        /// the vanilla 9pt floor are still needed here because the panel's
-        /// current geometry predates this work; widening the boxes so every
-        /// label can move to a real TextContext is the geometry pass, not this
-        /// one.
-        /// </summary>
-        private static TextMeshProUGUI CreateText(string name, Transform parent,
-            float x, float y, float width, float height, TextContext context,
-            float sizeOverride, Color color, TextAlignmentOptions alignment)
-        {
-            var root = CreateUiObject(name, parent);
-            SetTopLeft((RectTransform)root.transform, x, y, width, height);
-            var text = root.AddComponent<TextMeshProUGUI>();
-            ConfigureText(text, context, sizeOverride, color, alignment);
-            return text;
-        }
-
-        private static void ConfigureText(TextMeshProUGUI text,
-            TextContext context, float sizeOverride, Color color,
-            TextAlignmentOptions alignment)
-        {
-            if (sizeOverride > 0f)
-                text.fontSize = sizeOverride;
-            text.color = color;
-            text.alignment = alignment;
-            text.enableWordWrapping = false;
-            text.overflowMode = TextOverflowModes.Ellipsis;
-            text.raycastTarget = false;
-            // Assigns the font asset, restores the game's TMP material preset,
-            // applies the context's size and weight, and honours the LargeText
-            // accessibility setting -- none of which GetActualFont alone did.
-            VanillaSkin.ApplyFont(text, context);
-        }
-
-        private static void ConfigureButton(Button button, Graphic graphic)
-        {
-            button.targetGraphic = graphic;
-            button.transition = Selectable.Transition.ColorTint;
-            var colors = button.colors;
-            colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
-            colors.pressedColor = new Color(0.65f, 0.9f, 0.78f, 1f);
-            colors.disabledColor = new Color(0.32f, 0.37f, 0.35f, 0.55f);
-            colors.fadeDuration = 0.04f;
-            button.colors = colors;
-            // Only modal scrims still use UnityEngine.UI.Button. All visible
-            // controls are CommonButtons and already play ButtonClick in their
-            // own pointer handler, so this fills the one remaining silent gap
-            // without double-playing normal clicks.
-            button.onClick.AddListener(PlayVanillaButtonClick);
-        }
-
-        private static void PlayVanillaButtonClick()
-        {
-            var controller = SingletonMonoBehaviour<SoundController>.Instance;
-            var sounds = SingletonMonoBehaviour<SoundsStorage>.Instance;
-            if (controller != null && sounds?.ButtonClick != null)
-                controller.PlayUiSound(sounds.ButtonClick, isUnique: true);
-        }
-
-        private static void SetTopLeft(RectTransform rect, float x, float y,
-            float width, float height)
-        {
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = new Vector2(x, y);
-            rect.sizeDelta = new Vector2(width, height);
-        }
-
-        /// <summary>
-        /// Anchor a child to fill its parent with a horizontal inset, so it
-        /// tracks every later resize of that parent.
-        /// </summary>
-        private static void StretchInto(RectTransform rect, float inset)
-        {
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = new Vector2(inset, 0f);
-            rect.offsetMax = new Vector2(-inset, 0f);
-        }
-
-        private static void Stretch(RectTransform rect)
-        {
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
         }
     }
 }

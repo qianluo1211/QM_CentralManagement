@@ -57,8 +57,24 @@ namespace QM_CentralManagement
     /// FROM that edge, so widening the panel moves them as one cluster and
     /// the slack lands in the name column and the running-total text.
     /// </summary>
-    internal sealed class CentralStationTradePanel : MonoBehaviour
+    internal sealed class CentralStationTradePanel : MonoBehaviour,
+        IScreenPanel
     {
+        bool IScreenPanel.OwnsScreen => IsPanelActive;
+
+        void IScreenPanel.OnScreenEnabled()
+        {
+            // Vanilla's OnEnable brings its own chrome back; this panel
+            // stands in front of all of it.
+            HideVanillaUi();
+            ShowPanel();
+        }
+
+        void IScreenPanel.OnScreenDisabled()
+        {
+            OnScreenClosed();
+        }
+
         private const float RowH = 20f;
         private const float HeaderRowH = 14f;
         private const float SlotsTop = -18f;
@@ -159,14 +175,13 @@ namespace QM_CentralManagement
         }
 
         private static CentralStationTradePanel _instance;
-        private static int _blockedInputReleaseFrame;
 
         /// <summary>
         /// Tells SearchInputIsolation whether a text field of this panel owns
         /// the keyboard right now. Mirrors CentralManagementPanel's gate so
         /// typing in a quantity box never triggers game hotkeys.
         /// </summary>
-        internal static bool BlocksGameInput =>
+        internal static bool CapturesInput =>
             _instance != null
             && _instance.IsPanelActive
             && _instance._root != null
@@ -174,7 +189,7 @@ namespace QM_CentralManagement
             && (_instance.AnyInputFocused
                 || _instance.HasOpenDropdown()
                 || UI.IsShowing<ConfirmDialogWindow>()
-                || Time.frameCount == _blockedInputReleaseFrame);
+                );
 
         internal bool IsPanelActive { get; private set; }
 
@@ -269,6 +284,10 @@ namespace QM_CentralManagement
         private GameObject _nextPageRoot;
         private CommonButton _nextPageButton;
         private readonly List<GameObject> _sortDropdownRows = new List<GameObject>();
+        // Vanilla widgets this panel switched off, so the restore puts back
+        // exactly that set. See HideVanillaUi.
+        private readonly List<GameObject> _hiddenVanillaObjects =
+            new List<GameObject>();
 
         // State.
         private Pane _pane = Pane.Buy;
@@ -281,8 +300,20 @@ namespace QM_CentralManagement
         private readonly Dictionary<string, int> _buyStockMap = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _sellOwnedMap = new Dictionary<string, int>();
         private readonly List<TradeEntry> _index = new List<TradeEntry>();
+        /// <summary>
+        /// Item id -> maximum stack size, for the sell preview's per-stack
+        /// rounding. Cleared on every save load: ItemFactory.GetMaxStackSize
+        /// multiplies the record's MaxStack by the SAVE'S OWN
+        /// Difficulty.Preset.ItemsStackSize (X2/X3/X4), so a value cached
+        /// under one save is wrong under another.
+        /// </summary>
         private static readonly Dictionary<string, int> StaticMaxStack =
-            new Dictionary<string, int>();
+            new Dictionary<string, int>(StringComparer.Ordinal);
+
+        internal static void InvalidateSaveScopedCaches()
+        {
+            StaticMaxStack.Clear();
+        }
         private bool _canTrade;
         private bool _canSell;
         private bool _listDirty;
@@ -290,6 +321,10 @@ namespace QM_CentralManagement
         // the formatted strings are cached against the numbers that produced
         // them; invalidated whenever the labels or the localised format
         // strings are replaced.
+        // Recomputed only when the cart, the pane or the save state moves.
+        private bool _totalsDirty = true;
+        private int _cachedBuyTotal;
+        private int _cachedSellEstimate;
         private bool _summaryValid;
         private int _summarySell;
         private int _summaryBuy;
@@ -436,6 +471,9 @@ namespace QM_CentralManagement
         /// </summary>
         internal void OnScreenClosed()
         {
+            // Symmetric with HideVanillaUi: the pooled screen goes back to
+            // vanilla's own idea of what is visible, whoever opens it next.
+            ShowHiddenVanillaUi();
             IsPanelActive = false;
             _sweepActive = false;
             _pressTracked = false;
@@ -448,14 +486,77 @@ namespace QM_CentralManagement
 
         /// <summary>
         /// A vanilla opening of FastTradeScreen (mod disabled or not
-        /// requested) must not leave our UI visible on the pooled screen.
+        /// requested) must not leave our UI visible on the pooled screen --
+        /// nor leave the vanilla screen's own widgets switched off.
         /// </summary>
         internal void RestoreVanillaUi()
         {
             IsPanelActive = false;
             if (_root != null)
                 _root.SetActive(false);
+            ShowHiddenVanillaUi();
             _instance = null;
+        }
+
+        /// <summary>
+        /// This panel is a full-screen takeover, so everything the vanilla
+        /// trade screen draws has to go -- not just the handful of fields the
+        /// mod happens to hold FieldRefs for. Naming them one at a time missed
+        /// FastTradeScreen's own caption and back button, which kept bleeding
+        /// through behind the panel, and gave nothing to undo afterwards.
+        ///
+        /// Walks from this panel's parent up to the screen, switching off every
+        /// child that is not on the path down to the panel, and REMEMBERS each
+        /// one so the restore puts back exactly that set and nothing else.
+        /// </summary>
+        internal void HideVanillaUi()
+        {
+            if (_root == null || _screen == null)
+                return;
+
+            // Refuse to walk if the panel somehow ended up outside the screen:
+            // the loop would climb past it and start switching off unrelated
+            // UI views at the canvas root.
+            if (!_root.transform.IsChildOf(_screen.transform))
+            {
+                Plugin.DebugLog("trade panel is not under its screen; "
+                                + "skipping the vanilla hide sweep.");
+                return;
+            }
+
+            ShowHiddenVanillaUi();
+            var panelPath = new HashSet<Transform>();
+            for (var node = _root.transform; node != null; node = node.parent)
+                panelPath.Add(node);
+
+            for (var level = _root.transform.parent; level != null;
+                 level = level.parent)
+            {
+                foreach (Transform child in level)
+                {
+                    // Already-inactive children are left alone, so the restore
+                    // cannot switch ON something vanilla wanted hidden.
+                    if (panelPath.Contains(child)
+                        || !child.gameObject.activeSelf)
+                    {
+                        continue;
+                    }
+                    child.gameObject.SetActive(false);
+                    _hiddenVanillaObjects.Add(child.gameObject);
+                }
+                if (level == _screen.transform)
+                    break;
+            }
+        }
+
+        private void ShowHiddenVanillaUi()
+        {
+            foreach (var hidden in _hiddenVanillaObjects)
+            {
+                if (hidden != null)
+                    hidden.SetActive(true);
+            }
+            _hiddenVanillaObjects.Clear();
         }
 
         internal void AdjustQuantity(string itemId, bool sell, int delta)
@@ -496,6 +597,7 @@ namespace QM_CentralManagement
                 row.Input.SetTextWithoutNotify(qty.ToString());
                 RefreshRowLabel(row);
             }
+            InvalidateTotals();
             RefreshTotals();
         }
 
@@ -721,49 +823,21 @@ namespace QM_CentralManagement
         }
 
         /// <summary>
-        /// debugTradeLayout=true dumps the vanilla screen's real hierarchy --
-        /// names, anchored positions, sizes and sprite names -- so layout
-        /// problems can be fixed against the actual data instead of guesses.
+        /// debugTradeLayout=true dumps the vanilla screen's real hierarchy so
+        /// layout problems can be fixed against the actual data.
         /// </summary>
         private void DumpVanillaLayout()
         {
             try
             {
-                var lines = new List<string>
-                {
-                    "== station trade layout dump ==",
-                };
-                DumpNode(_screen.transform, string.Empty, lines);
-                foreach (var line in lines)
-                    Debug.Log(Plugin.LogPrefix + line);
+                LayoutDebug.DumpHierarchy("station trade layout dump",
+                    _screen.transform);
             }
             catch (Exception e)
             {
                 Debug.LogWarning(Plugin.LogPrefix
                                  + "layout dump failed: " + e);
             }
-        }
-
-        private static void DumpNode(Transform node, string indent,
-            List<string> lines)
-        {
-            if (lines.Count > 400)
-                return;
-            var rect = node as RectTransform;
-            var image = node.GetComponent<Image>();
-            var sprite = image != null && image.sprite != null
-                ? image.sprite.name
-                : (image != null ? "<null>" : "-");
-            var geometry = rect != null
-                ? string.Format(" pos=({0:F0},{1:F0}) size=({2:F0}x{3:F0})",
-                    rect.anchoredPosition.x, rect.anchoredPosition.y,
-                    rect.sizeDelta.x, rect.sizeDelta.y)
-                : string.Empty;
-            lines.Add(indent + node.name + geometry
-                      + " sprite=" + sprite
-                      + " active=" + node.gameObject.activeSelf);
-            for (var i = 0; i < node.childCount; i++)
-                DumpNode(node.GetChild(i), indent + "  ", lines);
         }
 
         // ------------------------------------------------------------------
@@ -1013,6 +1087,7 @@ namespace QM_CentralManagement
             // and a language switch replaces the format strings too.
             _summaryValid = false;
             _pointsValid = false;
+            _totalsDirty = true;
             // Destroy is deferred to the end of the frame, so every field
             // must be nulled NOW: otherwise the guards in the attach
             // methods see the dying clones as "already present", skip the
@@ -1332,9 +1407,9 @@ namespace QM_CentralManagement
                 Input.imeCompositionMode = IMECompositionMode.On;
             });
             _search.onDeselect.AddListener(_ =>
-                _blockedInputReleaseFrame = Time.frameCount);
+                ModInputGate.BlockThisFrame());
             _search.onEndEdit.AddListener(_ =>
-                _blockedInputReleaseFrame = Time.frameCount);
+                ModInputGate.BlockThisFrame());
 
             _sortRoot = PanelUi.CreateDropdownTrigger("Sort", parent,
                 _panelW - 98f, -37f, 94f, 14f, out _sortLabel);
@@ -1492,33 +1567,33 @@ namespace QM_CentralManagement
                 4f, _footerY, _panelW - 8f, FooterH);
 
             _buySummaryLabel = PanelUi.CreateText("BuySummary",
-                footer.transform, 2f, 0f, 294f, 17f, TextContext.IgnoreSize,
+                footer.transform, 2f, 0f, SummaryMinW, FooterH, TextContext.IgnoreSize,
                 8f, PanelUi.ValueColor, TextAlignmentOptions.MidlineLeft);
             _lowReputationLabel = PanelUi.CreateText("LowReputation",
-                footer.transform, 2f, 0f, 294f, 17f, TextContext.IgnoreSize,
+                footer.transform, 2f, 0f, SummaryMinW, FooterH, TextContext.IgnoreSize,
                 8f, PanelUi.DangerColor, TextAlignmentOptions.MidlineLeft);
             _lowReputationLabel.gameObject.SetActive(false);
 
             _sellSummaryLabel = PanelUi.CreateText("SellSummary",
-                footer.transform, 2f, 0f, 294f, 17f, TextContext.IgnoreSize,
+                footer.transform, 2f, 0f, SummaryMinW, FooterH, TextContext.IgnoreSize,
                 8f, PanelUi.ValueColor, TextAlignmentOptions.MidlineLeft);
             _sellNoticeLabel = PanelUi.CreateText("SellNotice",
-                footer.transform, 2f, 0f, 294f, 17f, TextContext.IgnoreSize,
+                footer.transform, 2f, 0f, SummaryMinW, FooterH, TextContext.IgnoreSize,
                 8f, PanelUi.DangerColor, TextAlignmentOptions.MidlineLeft);
             _sellNoticeLabel.gameObject.SetActive(false);
 
             // Pager, between the summary and the action buttons.
             _previousPageRoot = PanelUi.CreateButtonRoot("PreviousPage",
-                footer.transform, 302f, 0f, 14f, 17f,
+                footer.transform, 0f, 0f, PageArrowW, FooterH,
                 "qmtrade.tip.previous_page", out _, out var previousLabel);
             previousLabel.text = "[";
             _previousPageButton = PanelUi.ButtonOf(_previousPageRoot);
             PanelUi.BindClick(_previousPageRoot, () => ScrollRows(-1));
             _pageLabel = PanelUi.CreateText("Page", footer.transform,
-                318f, 0f, 34f, 17f, TextContext.SmallNumbers,
+                0f, 0f, PageLabelW, FooterH, TextContext.SmallNumbers,
                 PanelUi.ValueColor, TextAlignmentOptions.Center);
             _nextPageRoot = PanelUi.CreateButtonRoot("NextPage",
-                footer.transform, 354f, 0f, 14f, 17f,
+                footer.transform, 0f, 0f, PageArrowW, FooterH,
                 "qmtrade.tip.next_page", out _, out var nextLabel);
             nextLabel.text = "]";
             _nextPageButton = PanelUi.ButtonOf(_nextPageRoot);
@@ -1526,7 +1601,7 @@ namespace QM_CentralManagement
 
             // Buy pane controls.
             _buyClearRoot = PanelUi.CreateButtonRoot("BuyClear",
-                footer.transform, 496f, 0f, 54f, 17f, "qmtrade.tip.clear",
+                footer.transform, 0f, 0f, ClearButtonW, FooterH, "qmtrade.tip.clear",
                 out _, out var buyClearLabel);
             buyClearLabel.text = Localization.Get("qmtrade.clear")
                                  + ShortcutSuffix(Plugin.ShortcutClearCart);
@@ -1534,28 +1609,29 @@ namespace QM_CentralManagement
             {
                 _buyWallet.Clear();
                 RefreshSlots();
+                InvalidateTotals();
                 RefreshTotals();
             });
 
             _buyExecuteRoot = PanelUi.CreateButtonRoot("Trade",
-                footer.transform, 552f, 0f, 76f, 17f, "qmtrade.tip.trade",
+                footer.transform, 0f, 0f, BuyExecuteW, FooterH, "qmtrade.tip.trade",
                 out _, out var buyLabel);
             buyLabel.text = Localization.Get("qmtrade.trade")
                             + ShortcutSuffix(Plugin.ShortcutTrade);
             _buyExecuteButton = PanelUi.ButtonOf(_buyExecuteRoot);
             PanelUi.BindClick(_buyExecuteRoot, ExecuteTrade);
 
-            // Sell pane controls. Right-aligned against the footer's 628px
-            // right edge, 2px apart.
+            // Sell pane controls. Every footer widget is positioned by
+            // LayoutFooter, from its distance to the footer's right edge.
             _sellSelectAllRoot = PanelUi.CreateButtonRoot("SelectAll",
-                footer.transform, 430f, 0f, 60f, 17f, "qmtrade.tip.select_all",
+                footer.transform, 0f, 0f, SellSelectAllW, FooterH, "qmtrade.tip.select_all",
                 out _, out var selectAllLabel);
             selectAllLabel.text = Localization.Get("qmtrade.select_all")
                                   + ShortcutSuffix(Plugin.ShortcutSelectAll);
             PanelUi.BindClick(_sellSelectAllRoot, SelectAllVisible);
 
             _sellClearRoot = PanelUi.CreateButtonRoot("SellClear",
-                footer.transform, 492f, 0f, 54f, 17f, "qmtrade.tip.clear",
+                footer.transform, 0f, 0f, ClearButtonW, FooterH, "qmtrade.tip.clear",
                 out _, out var sellClearLabel);
             sellClearLabel.text = Localization.Get("qmtrade.clear")
                                   + ShortcutSuffix(Plugin.ShortcutClearCart);
@@ -1563,11 +1639,12 @@ namespace QM_CentralManagement
             {
                 _sellWallet.Clear();
                 RefreshSlots();
+                InvalidateTotals();
                 RefreshTotals();
             });
 
             _sellExecuteRoot = PanelUi.CreateButtonRoot("Trade",
-                footer.transform, 548f, 0f, 80f, 17f, "qmtrade.tip.trade",
+                footer.transform, 0f, 0f, SellExecuteW, FooterH, "qmtrade.tip.trade",
                 out _, out var sellLabel);
             sellLabel.text = Localization.Get("qmtrade.trade")
                              + ShortcutSuffix(Plugin.ShortcutTrade);
@@ -1578,7 +1655,7 @@ namespace QM_CentralManagement
             // between the pager and the action buttons; its full height is
             // kept so the decorative bars stay visible.
             _extraChargeLabel = PanelUi.CreateText("ExtraCharge",
-                footer.transform, 374f, 0f, 110f, 17f,
+                footer.transform, 0f, 0f, ExtraChargeW, FooterH,
                 TextContext.IgnoreSize, 8f, PanelUi.AccentColor,
                 TextAlignmentOptions.MidlineLeft);
             _extraChargeLabel.gameObject.SetActive(false);
@@ -1590,6 +1667,19 @@ namespace QM_CentralManagement
         // edge. At the 628px design width these reproduce the original fixed
         // positions exactly; on a wider panel the whole cluster travels with
         // the edge and the running-total text absorbs the difference.
+        // Control widths, shared by BuildFooter and LayoutFooter. They used
+        // to be written twice -- literals at build time, literals again in the
+        // layout pass -- so the two could disagree and only the layout pass
+        // would win.
+        private const float PageArrowW = 14f;
+        private const float PageLabelW = 34f;
+        private const float ClearButtonW = 54f;
+        private const float BuyExecuteW = 76f;
+        private const float SellSelectAllW = 60f;
+        private const float SellExecuteW = 80f;
+        private const float ExtraChargeW = 110f;
+        private const float SummaryMinW = 60f;
+
         private const float PagePreviousInset = 326f;
         private const float PageLabelInset = 310f;
         private const float PageNextInset = 274f;
@@ -1610,22 +1700,25 @@ namespace QM_CentralManagement
 
             // Everything left of the pager is running text; it gets whatever
             // the cluster does not need.
-            var summaryW = Mathf.Max(60f, footerW - PagePreviousInset - 4f);
+            var summaryW = Mathf.Max(SummaryMinW,
+                footerW - PagePreviousInset - 4f);
             SetFooterRect(_buySummaryLabel, 2f, summaryW);
             SetFooterRect(_lowReputationLabel, 2f, summaryW);
             SetFooterRect(_sellSummaryLabel, 2f, summaryW);
             SetFooterRect(_sellNoticeLabel, 2f, summaryW);
 
-            SetFooterRect(_previousPageRoot, footerW - PagePreviousInset, 14f);
-            SetFooterRect(_pageLabel, footerW - PageLabelInset, 34f);
-            SetFooterRect(_nextPageRoot, footerW - PageNextInset, 14f);
-            SetFooterRect(_extraChargeLabel, footerW - ExtraChargeInset, 110f);
-            SetFooterRect(_buyClearRoot, footerW - BuyClearInset, 54f);
-            SetFooterRect(_buyExecuteRoot, footerW - BuyExecuteInset, 76f);
+            SetFooterRect(_previousPageRoot, footerW - PagePreviousInset,
+                PageArrowW);
+            SetFooterRect(_pageLabel, footerW - PageLabelInset, PageLabelW);
+            SetFooterRect(_nextPageRoot, footerW - PageNextInset, PageArrowW);
+            SetFooterRect(_extraChargeLabel, footerW - ExtraChargeInset,
+                ExtraChargeW);
+            SetFooterRect(_buyClearRoot, footerW - BuyClearInset, ClearButtonW);
+            SetFooterRect(_buyExecuteRoot, footerW - BuyExecuteInset, BuyExecuteW);
             SetFooterRect(_sellSelectAllRoot,
-                footerW - SellSelectAllInset, 60f);
-            SetFooterRect(_sellClearRoot, footerW - SellClearInset, 54f);
-            SetFooterRect(_sellExecuteRoot, footerW - SellExecuteInset, 80f);
+                footerW - SellSelectAllInset, SellSelectAllW);
+            SetFooterRect(_sellClearRoot, footerW - SellClearInset, ClearButtonW);
+            SetFooterRect(_sellExecuteRoot, footerW - SellExecuteInset, SellExecuteW);
 
             // The cloned vanilla discount widget keeps its own height and is
             // bottom-anchored, so it is placed by its measured size rather
@@ -1699,6 +1792,7 @@ namespace QM_CentralManagement
             row.Catcher = catcher;
             PanelUi.SetTopLeft((RectTransform)catcher.transform,
                 NameX, 0f, _stockX - NameX - 4f, RowH);
+            VanillaSkin.AddHint(catcher, "qmtrade.tip.row");
             var catcherImage = catcher.AddComponent<Image>();
             catcherImage.color = new Color(0f, 0f, 0f, 0f);
             catcherImage.raycastTarget = true;
@@ -1771,7 +1865,7 @@ namespace QM_CentralManagement
             wheel.Panel = this;
             row.Input.onEndEdit.AddListener(value =>
             {
-                _blockedInputReleaseFrame = Time.frameCount;
+                ModInputGate.BlockThisFrame();
                 if (string.IsNullOrEmpty(row.ItemId))
                     return;
                 var qty = 0;
@@ -1785,7 +1879,7 @@ namespace QM_CentralManagement
                     Mathf.Clamp(qty, 0, available));
             });
             row.Input.onDeselect.AddListener(_ =>
-                _blockedInputReleaseFrame = Time.frameCount);
+                ModInputGate.BlockThisFrame());
 
             row.PlusRoot = BuildStepButton("Plus", qtyRoot.transform,
                 66f, 0f, 18f, 16f, "qmtrade.tip.plus", "+",
@@ -1908,6 +2002,7 @@ namespace QM_CentralManagement
             ClampWallets();
             RefreshSlots();
             RefreshChrome();
+            InvalidateTotals();
             RefreshTotals();
         }
 
@@ -1917,6 +2012,7 @@ namespace QM_CentralManagement
             ClampWallets();
             RefreshSlots();
             RefreshChrome();
+            InvalidateTotals();
             RefreshTotals();
         }
 
@@ -2354,6 +2450,16 @@ namespace QM_CentralManagement
                    || !string.IsNullOrEmpty(_searchText);
         }
 
+        /// <summary>
+        /// The cart changed. The money is recomputed on the next frame rather
+        /// than here, so a sweep across twenty rows costs one recompute, not
+        /// twenty.
+        /// </summary>
+        private void InvalidateTotals()
+        {
+            _totalsDirty = true;
+        }
+
         private void RefreshTotals()
         {
             if (!IsPanelActive || _root == null || !_root.activeInHierarchy)
@@ -2399,11 +2505,26 @@ namespace QM_CentralManagement
         {
             if (_root == null)
                 return;
-            var buyTotal = _canTrade
-                ? TradeSystem.GetBuyPrice(_progression, _factions,
-                    _itemsPrices, _station, _buyWallet)
-                : 0;
-            var sellEstimate = _canSell ? EstimateSellGain() : 0;
+
+            // The prices are the expensive half: GetBuyPrice walks the cart and
+            // EstimateSellGain calls GetItemSellPrice once per line, then splits
+            // each line into whole stacks to match vanilla's per-stack rounding.
+            // None of that can change without the cart, the pane or a completed
+            // trade changing, so it runs on demand -- it used to run sixty times
+            // a second because the TRADE button also tracks the drag state,
+            // which has no change event. Only that last part is per-frame now.
+            if (_totalsDirty)
+            {
+                _totalsDirty = false;
+                _cachedBuyTotal = _canTrade
+                    ? TradeSystem.GetBuyPrice(_progression, _factions,
+                        _itemsPrices, _station, _buyWallet)
+                    : 0;
+                _cachedSellEstimate = _canSell ? EstimateSellGain() : 0;
+            }
+            var buyTotal = _cachedBuyTotal;
+            var sellEstimate = _cachedSellEstimate;
+
             var after = _faction.PlayerTradePoints + sellEstimate - buyTotal;
             var hasSell = _canSell && _sellWallet.Count > 0;
             var hasBuy = _canTrade && _buyWallet.Count > 0;
@@ -2411,14 +2532,12 @@ namespace QM_CentralManagement
             var affordable = _faction.PlayerTradePoints + sellEstimate
                              >= buyTotal;
 
-            // This runs from Update -- the TRADE button also tracks the drag
-            // state, which has no change event -- so the summary string is
-            // only rebuilt when one of the numbers in it actually moves.
-            // Formatting it unconditionally allocated a fresh string sixty
-            // times a second for a readout that changes on a click.
             var color = cartEmpty
                 ? PanelUi.OffColor
                 : (affordable ? PanelUi.ValueColor : PanelUi.DangerColor);
+            // The formatted string is memoised separately: the numbers above
+            // can be recomputed to the same values (a clamp, a refused trade)
+            // without the sentence needing to be rebuilt.
             if (!_summaryValid
                 || _summarySell != sellEstimate
                 || _summaryBuy != buyTotal
@@ -2530,6 +2649,7 @@ namespace QM_CentralManagement
                     _sellWallet[entry.ItemId] = entry.Available;
             }
             RefreshRowLabels();
+            InvalidateTotals();
             RefreshTotals();
         }
 
@@ -2962,6 +3082,9 @@ namespace QM_CentralManagement
                 _listDirty = false;
                 RefreshList();
             }
+            // Deliberately NOT InvalidateTotals: the per-frame job is only the
+            // TRADE button's drag-state gate. The prices behind it are
+            // recomputed when something actually moves the cart.
             RefreshTotals();
         }
 
@@ -2998,6 +3121,7 @@ namespace QM_CentralManagement
             {
                 WalletOf(_pane == Pane.Sell).Clear();
                 RefreshSlots();
+                InvalidateTotals();
                 RefreshTotals();
                 return;
             }

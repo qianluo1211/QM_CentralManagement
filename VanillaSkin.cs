@@ -344,19 +344,33 @@ namespace QM_CentralManagement
         }
 
         /// <summary>
-        /// DISABLED. Kept wired so the call sites and localisation tags survive.
+        /// Attaches the game's own hover-hint tooltip to a mod control.
         ///
-        /// TooltipFactory.ShowSimpleTextTooltip (TooltipFactory.cs:197) only
-        /// does _simpleTextTooltip.gameObject.SetActive(true) -- it carries no
-        /// positioning of its own, so the shared tooltip object stays wherever
-        /// the vanilla layout left it. Over this panel that lands a large,
-        /// unbacked line of text across the filter tabs instead of beside the
-        /// control being hovered.
+        /// This was switched off for a while on the belief that
+        /// TooltipFactory.ShowSimpleTextTooltip carries no positioning -- its
+        /// body really is just SetActive(true) plus Initialize. But the
+        /// positioning is one level down: SimpleTextTooltip.Initialize ends
+        /// with RecalculatePosition(Input.mousePosition), and
+        /// BaseTooltip.RecalculatePosition places the rect at the cursor and
+        /// clamps it against the right and bottom screen edges. Vanilla drives
+        /// the identical path from HintTooltipHandler, which StarmapScreen even
+        /// adds at runtime exactly the way this method does.
         ///
-        /// Re-enabling needs the tooltip rect positioned against the hovered
-        /// control (and clamped to the screen) first; until then a broken
-        /// tooltip is worse than none, and the item icons already carry the
-        /// real vanilla item tooltip through ItemSlot.
+        /// So the tooltip is not broken -- but it was still switched back off
+        /// after testing, for a plainer reason: it appears BELOW-RIGHT of the
+        /// cursor, and these panels are dense grids of tabs and rows. Hovering
+        /// a filter tab covers the two tabs under it; the hint costs more than
+        /// the one line of text is worth. Vanilla only puts hints on isolated
+        /// controls, which is the shape this pays off in.
+        ///
+        /// The call sites and localisation tags are kept: turning this back on
+        /// is one bool, and the widgets that WOULD earn a hint (the trade row's
+        /// sweep interaction, which nothing else explains) are already tagged.
+        ///
+        /// One further caveat if it is re-enabled: in controller / keyboard-only
+        /// input modes RecalculatePosition snaps to UI.Navigation.Selected
+        /// rather than the cursor, and mod controls are deliberately kept out of
+        /// that ring by SuppressNavigation.
         /// </summary>
         internal static void AddHint(GameObject target, string localizationTag)
         {
@@ -370,7 +384,7 @@ namespace QM_CentralManagement
         }
 
         // static readonly, not const: a const would let the compiler fold the
-        // guard away and warn the body is unreachable.
+        // guard away and warn that the body is unreachable.
         internal static readonly bool HintTooltipsEnabled = false;
 
         /// <summary>

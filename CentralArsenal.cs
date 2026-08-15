@@ -62,6 +62,8 @@ namespace QM_CentralManagement
             _contextMenuItemSlot = AccessTools.FieldRefAccess<ScreenWithShipCargo,
                 ItemSlot>("_contextMenuItemSlot");
 
+            ModInputGate.Register(() => CentralManagementPanel.CapturesInput);
+
             PatchRequired(harmony, typeof(ArsenalScreen),
                 nameof(ArsenalScreen.Configure),
                 postfix: nameof(ArsenalConfigurePostfix),
@@ -78,26 +80,8 @@ namespace QM_CentralManagement
                 nameof(AugmentationScreen.RefreshView),
                 postfix: nameof(AugmentationRefreshViewPostfix),
                 argumentTypes: Type.EmptyTypes);
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "OnEnable",
-                postfix: nameof(ShipCargoOnEnablePostfix),
-                argumentTypes: Type.EmptyTypes);
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "OnDisable",
-                prefix: nameof(ShipCargoOnDisablePrefix),
-                argumentTypes: Type.EmptyTypes);
-            PatchRequired(harmony, typeof(ScreenWithShipCargo), "Update",
-                prefix: nameof(ShipCargoUpdatePrefix),
-                argumentTypes: Type.EmptyTypes);
-            // Update was isolated but Process was not, and Process is where the
-            // cargo screen claims Alpha1..Alpha9 for its own tab strip
-            // (TryProcessTabSelectionInput). UI.Process still routes to it while
-            // central mode is up, so pressing 1-9 in this panel switched the
-            // tabs of the screen underneath -- a strip that is hidden here.
-            // The other two things Process does, the equip hotkey and
-            // drop-to-tab, target that same hidden strip.
-            PatchRequired(harmony, typeof(ScreenWithShipCargo),
-                nameof(ScreenWithShipCargo.Process),
-                prefix: nameof(ShipCargoProcessPrefix),
-                argumentTypes: new[] { typeof(bool).MakeByRefType() });
+            // The four ScreenWithShipCargo lifecycle methods are patched once,
+            // by PatchScreenPanels, and dispatched through IScreenPanel.
             PatchRequired(harmony, typeof(ScreenWithShipCargo),
                 "ContextMenuOnSplitStackConfirmed",
                 prefix: nameof(CentralSplitPrefix),
@@ -105,32 +89,111 @@ namespace QM_CentralManagement
                 argumentTypes: new[] { typeof(int), typeof(int) });
         }
 
+        /// <summary>
+        /// Both guards cover the same hazard: an ItemSlot that is alive on
+        /// screen but whose item has already left its storage.
+        ///
+        /// The central panel's cards hold POOLED ItemSlots pointed at a
+        /// specific stack. Once that stack is consumed -- recycled, sold,
+        /// split, ctrl-click transferred -- item.Storage goes null while the
+        /// slot still references it, and the panel only catches up on its next
+        /// queued refresh (which Update also skips while a drag is in flight).
+        /// Anything the player does to that slot inside that window reaches
+        /// vanilla code that assumes a live item.
+        ///
+        /// DragController.Update only checks that the slot itself is non-null
+        /// before invoking these, so the null checks have to live here.
+        /// </summary>
         private static void PatchDragStateSafety(Harmony harmony)
         {
             PatchRequired(harmony, typeof(DragController),
                 nameof(DragController.CanPutInSlot),
                 prefix: nameof(CanPutInSlotSafetyPrefix),
                 argumentTypes: new[] { typeof(ItemSlot) });
+            // ScreenWithShipCargo.DragControllerShowContextMenuCallback reads
+            // obj.Item.Storage.Source on its second line. A stale slot there
+            // throws before the menu is ever configured, so the right click
+            // silently does nothing.
+            PatchRequired(harmony, typeof(ScreenWithShipCargo),
+                "DragControllerShowContextMenuCallback",
+                prefix: nameof(ShowContextMenuSafetyPrefix),
+                argumentTypes: new[] { typeof(ItemSlot) });
         }
 
+        private static bool ShowContextMenuSafetyPrefix(ItemSlot obj)
+        {
+            try
+            {
+                return obj != null && obj.Item != null
+                       && obj.Item.Storage != null;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(LogPrefix
+                               + "context menu guard failed: " + e);
+                return true;
+            }
+        }
+
+        // _merc is an auto-property override, so its backing field carries a
+        // compiler-mangled name. Go through the getter instead of guessing it.
+        private static System.Reflection.MethodInfo _viewMercGetter;
+
         /// <summary>
-        /// Guards InventoryWeightPanel.Initialize against a null mercenary.
+        /// Guards the vanilla operator view's inventory callbacks against a
+        /// null mercenary.
         ///
-        /// The central panel hides the vanilla operator view while its
-        /// NoPlayerInventoryView can still be subscribed to
-        /// Inventory.OnWeightChanged. When a limb install changes the bare-hand
-        /// weapon, the weight event reaches that view with _merc == null and
-        /// vanilla throws inside AugmentationSystem.Augment -- which then
-        /// aborts before its caller's RefreshView, leaving every screen stale.
-        /// Skipping the update for a null mercenary is always safe: there is
-        /// nothing to display.
+        /// NoPlayerInventoryView.OnEnable subscribes to three Inventory events
+        /// and OnDisable both unsubscribes and nulls _merc. Those two can fall
+        /// out of step: ArsenalScreen.Configure initializes the view while the
+        /// pooled screen is still inactive, so a later Initialize stacks a
+        /// SECOND subscription, and the next OnDisable removes only one of
+        /// them. The leftover handler then fires with _merc == null.
+        ///
+        /// SetCentralOperatorPanelVisible performs an explicit disable/enable
+        /// dance to keep them in step -- but only for ArsenalScreen; the
+        /// augmentation screen manages its own view and never got that
+        /// treatment, which is where this still bites.
+        ///
+        /// The damage is not the exception itself: it unwinds out of
+        /// AugmentationSystem.Augment / RemoveAllChainedAugmentations, which
+        /// aborts before the caller's RefreshView and leaves the body-part
+        /// panel frozen on its previous state. Skipping the refresh for a null
+        /// mercenary is always safe -- there is nothing on screen to update.
         /// </summary>
-        private static void PatchInventoryWeightGuard(Harmony harmony)
+        private static void PatchInventoryViewGuards(Harmony harmony)
         {
             PatchRequired(harmony, typeof(InventoryWeightPanel),
                 nameof(InventoryWeightPanel.Initialize),
                 prefix: nameof(InventoryWeightPanelInitializePrefix),
                 argumentTypes: new[] { typeof(Mercenary) });
+
+            _viewMercGetter = AccessTools.PropertyGetter(
+                typeof(NoPlayerInventoryView), "_merc");
+            if (_viewMercGetter == null)
+            {
+                throw new MissingMemberException(
+                    "NoPlayerInventoryView._merc getter was not found");
+            }
+            PatchRequired(harmony, typeof(NoPlayerInventoryView),
+                "InventoryOnBodyEquipmentSlotChanged",
+                prefix: nameof(InventoryViewSlotChangedPrefix),
+                argumentTypes: Type.EmptyTypes);
+        }
+
+        private static bool InventoryViewSlotChangedPrefix(
+            NoPlayerInventoryView __instance)
+        {
+            try
+            {
+                return _viewMercGetter.Invoke(__instance, null) != null;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(LogPrefix
+                               + "inventory view guard failed: " + e);
+                return true;
+            }
         }
 
         private static bool InventoryWeightPanelInitializePrefix(
@@ -284,67 +347,9 @@ namespace QM_CentralManagement
             }
         }
 
-        private static void ShipCargoOnEnablePostfix(ScreenWithShipCargo __instance)
-        {
-            try
-            {
-                var panel = __instance.GetComponent<CentralManagementPanel>();
-                if (panel == null || !panel.IsCentralMode)
-                    return;
-                _cargoWindow(__instance)?.SetActive(false);
-                panel.ShowPanel();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix + "central enable failed: " + e);
-            }
-        }
 
-        private static void ShipCargoOnDisablePrefix(ScreenWithShipCargo __instance)
-        {
-            try
-            {
-                __instance.GetComponent<CentralManagementPanel>()?.LeaveCentralMode();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix + "central cleanup failed: " + e);
-            }
-        }
 
-        private static bool ShipCargoUpdatePrefix(ScreenWithShipCargo __instance)
-        {
-            try
-            {
-                var panel = __instance.GetComponent<CentralManagementPanel>();
-                return panel == null || !panel.IsCentralMode;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix + "central update isolation failed: " + e);
-                return true;
-            }
-        }
 
-        private static bool ShipCargoProcessPrefix(ScreenWithShipCargo __instance,
-            out bool interruptProcessing)
-        {
-            // false means "nothing consumed here", so the rest of the UI input
-            // chain carries on exactly as it would if this screen had no
-            // hotkeys -- we only decline the cargo screen's own bindings.
-            interruptProcessing = false;
-            try
-            {
-                var panel = __instance.GetComponent<CentralManagementPanel>();
-                return panel == null || !panel.IsCentralMode;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix
-                               + "central process isolation failed: " + e);
-                return true;
-            }
-        }
 
         private static void CentralSplitPrefix(ScreenWithShipCargo __instance,
             int leftVal, out CentralManagementPanel __state)

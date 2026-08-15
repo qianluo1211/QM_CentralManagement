@@ -45,7 +45,7 @@ namespace QM_CentralManagement
         /// </summary>
         private static bool SuppressBooleanInputWhileSearching(ref bool __result)
         {
-            if (!CentralManagementPanel.ShouldBlockGameInput)
+            if (!ModInputGate.IsCaptured)
                 return true;
             __result = false;
             return false;
@@ -69,7 +69,7 @@ namespace QM_CentralManagement
         private static bool SuppressTypedKeyWhileSearching(KeyCode keyCode,
             ref bool __result)
         {
-            if (!CentralManagementPanel.ShouldBlockGameInput)
+            if (!ModInputGate.IsCaptured)
                 return true;
             if (!IsConsumedByTextField(keyCode))
                 return true;

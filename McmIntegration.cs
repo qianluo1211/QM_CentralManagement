@@ -44,11 +44,6 @@ namespace QM_CentralManagement
         // follow the game language and refresh on language switch.
         private const string McmHeaderKey = "qmcentral.mcm.header";
 
-        private const string McmAutoUnlockKey = "autoUnlockTech";
-        private const string McmStationTradeKey = "stationTrade";
-        private const string McmTradeConfirmKey = "tradeConfirm";
-        private const string McmDebugLayoutKey = "debugTradeLayout";
-
         private static bool _mcmRegistered;
         private static bool _mcmBroken;
 
@@ -60,26 +55,16 @@ namespace QM_CentralManagement
                 return;
             try
             {
-                var config = new List<IConfigValue>
+                var config = new List<IConfigValue>();
+                foreach (var option in ConfigOptions)
                 {
-                    new ConfigValue(McmAutoUnlockKey, _autoUnlockTech,
-                        McmHeaderKey, false,
-                        "qmcentral.mcm.autoUnlockTech.tip",
-                        "qmcentral.mcm.autoUnlockTech"),
-                    new ConfigValue(McmStationTradeKey,
-                        _stationTradeEnabled,
-                        McmHeaderKey, true,
-                        "qmcentral.mcm.stationTrade.tip",
-                        "qmcentral.mcm.stationTrade"),
-                    new ConfigValue(McmTradeConfirmKey, _tradeConfirm,
-                        McmHeaderKey, false,
-                        "qmcentral.mcm.tradeConfirm.tip",
-                        "qmcentral.mcm.tradeConfirm"),
-                    new ConfigValue(McmDebugLayoutKey, _debugTradeLayout,
-                        McmHeaderKey, false,
-                        "qmcentral.mcm.debugTradeLayout.tip",
-                        "qmcentral.mcm.debugTradeLayout"),
-                };
+                    if (!option.InMcm)
+                        continue;
+                    config.Add(new ConfigValue(option.Key,
+                        option.ReadFlag(), McmHeaderKey,
+                        option.McmNeedsRestart, option.McmTipKey,
+                        option.McmLabelKey));
+                }
                 // The delegate is declared internal by MCM, so it must be
                 // constructed explicitly (method group conversion does not
                 // see past the accessibility).
@@ -106,14 +91,14 @@ namespace QM_CentralManagement
             error = null;
             try
             {
-                if (config.TryGetValue(McmAutoUnlockKey, out var v))
-                    _autoUnlockTech = Convert.ToBoolean(v);
-                if (config.TryGetValue(McmStationTradeKey, out var v3))
-                    _stationTradeEnabled = Convert.ToBoolean(v3);
-                if (config.TryGetValue(McmTradeConfirmKey, out var v4))
-                    _tradeConfirm = Convert.ToBoolean(v4);
-                if (config.TryGetValue(McmDebugLayoutKey, out var v5))
-                    _debugTradeLayout = Convert.ToBoolean(v5);
+                foreach (var option in ConfigOptions)
+                {
+                    if (option.InMcm
+                        && config.TryGetValue(option.Key, out var value))
+                    {
+                        option.WriteFlag(Convert.ToBoolean(value));
+                    }
+                }
                 PersistMcmSettings();
                 if (GameState?.Get<MagnumProgression>() != null)
                     TryAutoUnlockTech();
@@ -148,20 +133,9 @@ namespace QM_CentralManagement
                         continue;
                     var key = line.Substring(0, separator).Trim();
                     var value = line.Substring(separator + 1).Trim();
-                    if (!bool.TryParse(value, out var parsed))
-                        continue;
-                    if (key.Equals(McmAutoUnlockKey,
-                            StringComparison.OrdinalIgnoreCase))
-                        _autoUnlockTech = parsed;
-                    else if (key.Equals(McmStationTradeKey,
-                                 StringComparison.OrdinalIgnoreCase))
-                        _stationTradeEnabled = parsed;
-                    else if (key.Equals(McmTradeConfirmKey,
-                                 StringComparison.OrdinalIgnoreCase))
-                        _tradeConfirm = parsed;
-                    else if (key.Equals(McmDebugLayoutKey,
-                                 StringComparison.OrdinalIgnoreCase))
-                        _debugTradeLayout = parsed;
+                    var option = FindConfigOption(key);
+                    if (option != null && option.InMcm)
+                        option.Parse(value);
                 }
             }
             catch (Exception e)
@@ -179,14 +153,15 @@ namespace QM_CentralManagement
                 return;
             try
             {
-                var lines = new[]
+                var lines = new List<string>
                 {
                     "# Written by QM_CentralManagement via the Mod Configuration Menu.",
-                    McmAutoUnlockKey + "=" + _autoUnlockTech,
-                    McmStationTradeKey + "=" + _stationTradeEnabled,
-                    McmTradeConfirmKey + "=" + _tradeConfirm,
-                    McmDebugLayoutKey + "=" + _debugTradeLayout,
                 };
+                foreach (var option in ConfigOptions)
+                {
+                    if (option.InMcm)
+                        lines.Add(option.Key + "=" + option.ReadFlag());
+                }
                 File.WriteAllLines(path, lines);
             }
             catch (Exception e)

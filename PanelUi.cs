@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using MGSC;
 using TMPro;
 using UnityEngine;
@@ -7,11 +8,16 @@ using UnityEngine.UI;
 namespace QM_CentralManagement
 {
     /// <summary>
-    /// Shared factory for mod-built panels. These helpers were originally
-    /// private statics inside CentralManagementPanel; the station trade panel
-    /// needs the same vanilla look (9-slice frames, CommonButton states, the
-    /// game's TMP font presets), so they live here now. CentralManagementPanel
-    /// keeps its own copies so this extraction cannot disturb it.
+    /// The single factory for every mod-built panel: 9-slice vanilla frames,
+    /// CommonButton state art and sounds, the game's TMP font presets, and the
+    /// anchoring helpers that keep all of it on whole pixels.
+    ///
+    /// CentralManagementPanel, CentralStationTradePanel and ShipLoadoutBar all
+    /// build through here. They used to carry private copies of these helpers,
+    /// which had already started to drift apart (three different
+    /// CreateDropdownTrigger signatures, two ClearDropdownRows that disagreed
+    /// on whether to deactivate before destroying). A new panel should never
+    /// need to add a fourth copy -- extend this class instead.
     /// </summary>
     internal static class PanelUi
     {
@@ -97,6 +103,37 @@ namespace QM_CentralManagement
             rect.pivot = new Vector2(0f, 1f);
             rect.anchoredPosition = new Vector2(x, y);
             rect.sizeDelta = new Vector2(width, height);
+        }
+
+        /// <summary>
+        /// Top-right anchored placement: <paramref name="right"/> and
+        /// <paramref name="top"/> are insets from those two edges, so the
+        /// control keeps its distance from the right edge when the parent
+        /// is resized.
+        /// </summary>
+        internal static void SetTopRight(RectTransform rect, float right,
+            float top, float width, float height)
+        {
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.anchoredPosition = new Vector2(-right, -top);
+            rect.sizeDelta = new Vector2(width, height);
+        }
+
+        /// <summary>
+        /// Pinned to the parent's top edge and stretched between a left and a
+        /// right inset, so the control absorbs every width change instead of
+        /// keeping a fixed size.
+        /// </summary>
+        internal static void SetTopLeftRight(RectTransform rect, float left,
+            float top, float right, float height)
+        {
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.offsetMin = new Vector2(left, -top - height);
+            rect.offsetMax = new Vector2(-right, -top);
         }
 
         /// <summary>
@@ -331,6 +368,79 @@ namespace QM_CentralManagement
 
             root.SetActive(wasActive);
             return root;
+        }
+
+        /// <summary>
+        /// Dropdown trigger stretched between a left and a right inset rather
+        /// than given a fixed width, for bars that must follow their host
+        /// window's width.
+        /// </summary>
+        internal static GameObject CreateDropdownTriggerStretched(string name,
+            Transform parent, float left, float top, float right, float height,
+            out TextMeshProUGUI label)
+        {
+            var root = CreateDropdownTrigger(name, parent, 0f, 0f, 0f, height,
+                out label);
+            SetTopLeftRight((RectTransform)root.transform, left, top, right,
+                height);
+            return root;
+        }
+
+        /// <summary>
+        /// Marks a button as destructive. This keeps the standard
+        /// RegularButton_* frame and signals intent through the caption alone,
+        /// exactly as vanilla's own Recycle button does -- the red button art
+        /// only ships inside game-editor prefabs that never load at runtime.
+        /// </summary>
+        internal static void MakeDangerButton(GameObject root,
+            TextMeshProUGUI label)
+        {
+            var button = ButtonOf(root);
+            if (button == null)
+                return;
+            button.normalCaptionColor = DangerColor;
+            button.hoverCaptionColor = BrightColor;
+            if (label != null)
+                label.color = DangerColor;
+        }
+
+        /// <summary>
+        /// The only place a plain UnityEngine.UI.Button is still used is a
+        /// modal scrim, which has no caption and no vanilla art to preserve.
+        /// Every visible control is a CommonButton and plays its own click
+        /// sound, so this fills that one silent gap without double-playing.
+        /// </summary>
+        internal static void ConfigureButton(Button button, Graphic graphic)
+        {
+            button.targetGraphic = graphic;
+            button.transition = Selectable.Transition.ColorTint;
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+            colors.pressedColor = new Color(0.65f, 0.9f, 0.78f, 1f);
+            colors.disabledColor = new Color(0.32f, 0.37f, 0.35f, 0.55f);
+            colors.fadeDuration = 0.04f;
+            button.colors = colors;
+            button.onClick.AddListener(PlayVanillaButtonClick);
+        }
+
+        /// <summary>
+        /// Destroys pooled dropdown option rows. Deactivating first matters:
+        /// Destroy only takes effect at the end of the frame, so without it a
+        /// rebuilt list briefly draws the old rows underneath the new ones.
+        /// </summary>
+        internal static void ClearDropdownRows(List<GameObject> rows)
+        {
+            if (rows == null)
+                return;
+            foreach (var row in rows)
+            {
+                if (row == null)
+                    continue;
+                row.SetActive(false);
+                UnityEngine.Object.Destroy(row);
+            }
+            rows.Clear();
         }
 
         /// <summary>

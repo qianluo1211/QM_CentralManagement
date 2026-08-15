@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using MGSC;
 using UnityEngine;
@@ -12,16 +11,38 @@ namespace QM_CentralManagement
         internal const string TechId = "qm_central_management";
         internal const string LogPrefix = "[CentralManagement] ";
 
+        /// <summary>
+        /// Keeps every asset this mod creates at runtime reachable for the
+        /// whole session. Nothing reads the list -- holding the reference IS
+        /// the job: Unity runs Resources.UnloadUnusedAssets on scene loads and
+        /// would otherwise collect the technology icons and the perk
+        /// descriptor, which are not owned by any scene.
+        /// </summary>
         private static readonly List<UnityEngine.Object> OwnedAssets =
             new List<UnityEngine.Object>();
+
+        /// <summary>
+        /// Options retired by later versions. Accepted without complaint so an
+        /// existing config.txt does not start reporting unknown keys, but they
+        /// no longer feed anything:
+        ///   recycleConfirmSeconds  batch recycling moved to the game's own
+        ///                          ConfirmDialogWindow
+        ///   preventTradeArbitrage  the anti-arbitrage price floor was removed;
+        ///                          prices follow the vanilla formulas again
+        ///   tradeWithoutTech       the trade screen is gated on the central
+        ///                          management technology alone
+        /// </summary>
+        private static readonly HashSet<string> RetiredConfigKeys =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "recycleConfirmSeconds",
+                "preventTradeArbitrage",
+                "tradeWithoutTech",
+            };
 
         private static bool _ready;
         private static bool _debugLogging;
         private static string _modContentPath;
-        // Obsolete since batch recycling moved to the game's ConfirmDialogWindow.
-        // Still parsed so an existing config.txt does not start reporting an
-        // unknown option, but it no longer affects anything.
-        private static float _recycleConfirmSeconds = 4f;
         private static KeyCode _centralShortcutKey = KeyCode.C;
 
         internal static State GameState { get; private set; }
@@ -66,6 +87,7 @@ namespace QM_CentralManagement
         public static void AfterSaveLoaded(IModContext context)
         {
             GameState = context.State;
+            DropSaveScopedState();
             RegisterWithMcm();
             TryAutoUnlockTech();
         }
@@ -80,6 +102,20 @@ namespace QM_CentralManagement
         {
             GameState = context.State;
             TryAutoUnlockTech();
+        }
+
+        /// <summary>
+        /// Drops everything cached from the PREVIOUS save. The mod keeps no
+        /// per-save storage of its own, so anything derived from save state
+        /// has to be recomputed rather than carried across a load -- item
+        /// stack sizes scale with the save's difficulty preset, and the
+        /// preferred operator is a profile id that means a different agent
+        /// (or none) in another campaign.
+        /// </summary>
+        private static void DropSaveScopedState()
+        {
+            CentralStationTradePanel.InvalidateSaveScopedCaches();
+            _lastDeployedMercenaryProfileId = null;
         }
 
         /// <summary>
@@ -148,94 +184,16 @@ namespace QM_CentralManagement
                     continue;
                 var key = line.Substring(0, separator).Trim();
                 var value = line.Substring(separator + 1).Trim();
-                if (key.Equals("debugLogging",
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!bool.TryParse(value, out _debugLogging))
-                    {
-                        Debug.LogWarning(LogPrefix
-                                         + "debugLogging must be true or false.");
-                    }
-                }
-                else if (key.Equals("recycleConfirmSeconds",
-                             StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!float.TryParse(value, NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out var seconds)
-                        || seconds < 1f || seconds > 15f)
-                    {
-                        Debug.LogWarning(LogPrefix
-                                         + "recycleConfirmSeconds must be between 1 and 15; keeping "
-                                         + _recycleConfirmSeconds + ".");
-                    }
-                    else
-                    {
-                        _recycleConfirmSeconds = seconds;
-                    }
-                }
-                else if (key.Equals("shipLoadouts",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("loadoutBarOffsetY",
-                             StringComparison.OrdinalIgnoreCase))
-                {
-                    ParseShipLoadoutConfig(key, value);
-                }
-                else if (key.Equals("shortcutKey",
-                             StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!Enum.TryParse(value, true, out KeyCode shortcut))
-                    {
-                        Debug.LogWarning(LogPrefix + "shortcutKey '" + value
-                                         + "' is not a valid Unity KeyCode; keeping "
-                                         + _centralShortcutKey + ".");
-                    }
-                    else
-                    {
-                        _centralShortcutKey = shortcut;
-                    }
-                }
-                else if (key.Equals("stationTrade",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("tradeConfirm",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("buyConfirm",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("sellConfirm",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("debugTradeLayout",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("preventTradeArbitrage",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("quantityShiftStep",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("quantityCtrlStep",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("quantityCtrlShiftStep",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("shortcutTogglePane",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("shortcutPrevPage",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("shortcutNextPage",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("shortcutTrade",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("shortcutClearCart",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("shortcutSelectAll",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("tradeWithoutTech",
-                             StringComparison.OrdinalIgnoreCase)
-                         || key.Equals("autoUnlockTech",
-                             StringComparison.OrdinalIgnoreCase))
-                {
-                    ParseStationTradeConfig(key, value);
-                }
-                else
+                if (RetiredConfigKeys.Contains(key))
+                    continue;
+                var option = FindConfigOption(key);
+                if (option == null)
                 {
                     Debug.LogWarning(LogPrefix + "unknown config key '"
                                      + key + "'.");
+                    continue;
                 }
+                option.Parse(value);
             }
         }
     }

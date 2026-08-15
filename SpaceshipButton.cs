@@ -196,8 +196,15 @@ namespace QM_CentralManagement
         private static AccessTools.FieldRef<SpaceshipScreen, CommonButton>
             _spaceshipMercenariesButton;
         private static bool _centralOpenRequested;
-        private const string LastDeployedMercenaryKey =
-            "QM_CentralManagement.LastDeployedMercenary";
+        /// <summary>
+        /// Which agent the central panel opens on, remembered for THIS
+        /// session's save only (Plugin.DropSaveScopedState clears it on load).
+        /// It used to live in PlayerPrefs, but a profile id is not save
+        /// specific: after playing one campaign the next one would preselect
+        /// whichever agent happened to share that profile. A session-scoped
+        /// hint that falls back to "first available agent" is the honest
+        /// scope until the mod has real per-save storage.
+        /// </summary>
         private static string _lastDeployedMercenaryProfileId;
 
         private static void PatchSpaceshipButton(Harmony harmony)
@@ -251,8 +258,6 @@ namespace QM_CentralManagement
             if (string.IsNullOrEmpty(profileId))
                 return;
             _lastDeployedMercenaryProfileId = profileId;
-            PlayerPrefs.SetString(LastDeployedMercenaryKey, profileId);
-            PlayerPrefs.Save();
         }
 
         private static Mercenary GetPreferredCentralOperator()
@@ -262,11 +267,6 @@ namespace QM_CentralManagement
             if (values == null)
                 return null;
 
-            if (string.IsNullOrEmpty(_lastDeployedMercenaryProfileId))
-            {
-                _lastDeployedMercenaryProfileId = PlayerPrefs.GetString(
-                    LastDeployedMercenaryKey, string.Empty);
-            }
             if (!string.IsNullOrEmpty(_lastDeployedMercenaryProfileId))
             {
                 var recent = mercenaries.Get(
