@@ -78,6 +78,10 @@ Two things you need to point at yourself:
 
 Output lands in `bin/Release/`. To package, copy the dll next to `modmanifest.json`, `config.txt` and `assets/`.
 
+## License / 协议
+
+[MIT](LICENSE) — 随便用、随便改，保留版权声明即可。The bundled game assets are not covered: `assets/` contains sprites derived from Quasimorph's own UI art, which belongs to Magnum Scriptum Ltd.
+
 ## Credits
 
 - MCM integration builds on **Crynano's Mod Configuration Menu**.
