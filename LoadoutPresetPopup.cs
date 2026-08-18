@@ -4,6 +4,7 @@ using System.Linq;
 using MGSC;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace QM_CentralManagement
@@ -49,7 +50,14 @@ namespace QM_CentralManagement
             Apply,
             ForceApply,
             Delete,
-            Message
+            Message,
+            /// <summary>
+            /// A flow this class knows nothing about: the host supplies the
+            /// wording and the confirm action. Used by the shuttle manifest
+            /// controls, which share this popup rather than standing up a
+            /// second identical modal.
+            /// </summary>
+            Custom
         }
 
         private const float PopupWidth = 260f;
@@ -79,6 +87,7 @@ namespace QM_CentralManagement
         private TMP_InputField _nameInput;
         private Mode _mode;
         private string _pendingId;
+        private Action<string> _customConfirm;
 
         /// <param name="texts">Which wording variant this host uses.</param>
         /// <param name="context">Reads the host's current services.</param>
@@ -145,6 +154,17 @@ namespace QM_CentralManagement
             var popupRect = (RectTransform)_popupRoot.transform;
             VanillaSkin.Slice(_popupRoot, VanillaSkin.PanelFrame,
                 PanelUi.PanelColor).raycastTarget = true;
+            // The body needs a click handler of its own even though nothing
+            // in it is clickable. The scrim behind it closes on click, and a
+            // click that lands on dead space has no handler until the search
+            // walks up to that scrim -- so clicking the popup's own margin
+            // dismissed it, and while naming a preset that threw away
+            // whatever had been typed. EventTrigger implements the click
+            // interface with or without entries, so the search stops here.
+            // The (empty) list is assigned rather than left to the lazy
+            // getter, matching every other EventTrigger in this mod.
+            _popupRoot.AddComponent<EventTrigger>().triggers =
+                new List<EventTrigger.Entry>();
 
             _title = PanelUi.CreateText("Title", popupRect, 8f, -6f, 244f, 18f,
                 TextContext.WindowCaption, PanelUi.BrightColor,
@@ -219,6 +239,7 @@ namespace QM_CentralManagement
             _nameInput = null;
             _mode = Mode.None;
             _pendingId = null;
+            _customConfirm = null;
         }
 
         internal void Hide()
@@ -227,6 +248,7 @@ namespace QM_CentralManagement
                 _overlayRoot.SetActive(false);
             _mode = Mode.None;
             _pendingId = null;
+            _customConfirm = null;
         }
 
         internal void ApplyFont(TMP_FontAsset font)
@@ -325,19 +347,37 @@ namespace QM_CentralManagement
                 Localization.Get("qmcentral.preset_delete_confirm"));
         }
 
+        /// <summary>
+        /// A modal this class has no opinion about: the caller owns the
+        /// wording and what Confirm does. Passing a non-null
+        /// <paramref name="inputInitial"/> shows the name field; passing a
+        /// null <paramref name="onConfirm"/> makes it a plain message with a
+        /// single dismiss button.
+        /// </summary>
+        internal void OpenCustom(string title, string body, string confirm,
+            string inputInitial, Action<string> onConfirm)
+        {
+            Open(onConfirm == null ? Mode.Message : Mode.Custom, title, body,
+                confirm, inputInitial);
+            // After Open, which clears the previous flow's action.
+            _customConfirm = onConfirm;
+        }
+
         private void Open(Mode mode, string title, string body, string confirm,
             string input = null)
         {
             if (_overlayRoot == null)
                 return;
             _onBeforeOpen?.Invoke();
+            _customConfirm = null;
             _mode = mode;
             _title.text = title;
             _body.text = body;
             _confirmLabel.text = confirm;
             _cancelLabel.text = Localization.Get("qmcentral.preset_cancel");
 
-            var showInput = mode == Mode.Save;
+            var showInput = mode == Mode.Save
+                            || (mode == Mode.Custom && input != null);
             _nameInput.gameObject.SetActive(showInput);
             if (showInput)
             {
@@ -368,6 +408,18 @@ namespace QM_CentralManagement
             if (mode == Mode.Message)
             {
                 Close();
+                return;
+            }
+            if (mode == Mode.Custom)
+            {
+                var action = _customConfirm;
+                var text = _nameInput.gameObject.activeSelf
+                    ? _nameInput.text
+                    : null;
+                // Closed first: the action is free to open another modal on
+                // top (the manifest save reports its own result that way).
+                Close();
+                action?.Invoke(text);
                 return;
             }
             if (mode == Mode.Save)
@@ -434,6 +486,7 @@ namespace QM_CentralManagement
             _overlayRoot.SetActive(false);
             _mode = Mode.None;
             _pendingId = null;
+            _customConfirm = null;
             if (wasVisible)
                 _consumePointerRelease?.Invoke();
         }

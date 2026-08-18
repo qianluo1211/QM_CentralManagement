@@ -30,6 +30,10 @@ namespace QM_CentralManagement
             _arsenalVestGrid;
         private static AccessTools.FieldRef<ArsenalScreen, NoPlayerInventoryView>
             _inventoryView;
+        private static AccessTools.FieldRef<ArsenalScreen,
+            ShuttleCargoInSpaceStorageView> _shuttleCargoStorageView;
+        private static AccessTools.FieldRef<ArsenalScreen, LocalizableLabel>
+            _inventoryCaption;
         private static AccessTools.FieldRef<DragController, Action<ItemSlot>>
             _controlClickCallback;
         private static AccessTools.FieldRef<ScreenWithShipCargo, ItemSlot>
@@ -57,6 +61,11 @@ namespace QM_CentralManagement
                 GameObject>("_vestGrid");
             _inventoryView = AccessTools.FieldRefAccess<ArsenalScreen,
                 NoPlayerInventoryView>("_inventoryView");
+            _shuttleCargoStorageView = AccessTools.FieldRefAccess<
+                ArsenalScreen, ShuttleCargoInSpaceStorageView>(
+                "_shuttleCargoStorageView");
+            _inventoryCaption = AccessTools.FieldRefAccess<ArsenalScreen,
+                LocalizableLabel>("_inventoryCaption");
             _controlClickCallback = AccessTools.FieldRefAccess<DragController,
                 Action<ItemSlot>>("_controlClickCallback");
             _contextMenuItemSlot = AccessTools.FieldRefAccess<ScreenWithShipCargo,
@@ -444,6 +453,70 @@ namespace QM_CentralManagement
             }
         }
 
+        /// <summary>
+        /// Puts the game's own shuttle-hold grid in the inventory window, in
+        /// place of the operator's equipment.
+        ///
+        /// ShuttleCargoView and NoPlayerInventory are siblings inside
+        /// InventoryWindow and share its 314x150 rect, so this is exactly what
+        /// ArsenalScreen.Refresh does for its cargo-shuttle tab -- minus the
+        /// tab strip, which central mode has no room for. Going through the
+        /// vanilla view is what buys real drag and drop, the real capacity
+        /// limit and the real stacking rules.
+        ///
+        /// The caller must have made the window visible first
+        /// (SetCentralOperatorPanelVisible); this only chooses which of the
+        /// two views fills it.
+        /// </summary>
+        internal static bool SetCentralShuttleViewVisible(
+            ScreenWithShipCargo screen, bool visible)
+        {
+            if (!(screen is ArsenalScreen arsenal))
+                return false;
+            try
+            {
+                var view = _shuttleCargoStorageView(arsenal);
+                var inventoryView = _inventoryView(arsenal);
+                var progression = _screenProgression(arsenal);
+                if (view == null || progression == null)
+                    return false;
+                if (!visible)
+                {
+                    view.gameObject.SetActive(false);
+                    // Only hand the window back to the equipment view if it is
+                    // actually open: hiding the pane entirely goes through
+                    // SetCentralOperatorPanelVisible, which owns the window.
+                    if (inventoryView != null
+                        && _inventoryWindow(arsenal)?.activeSelf == true)
+                    {
+                        inventoryView.gameObject.SetActive(true);
+                        _inventoryCaption(arsenal)?.ChangeLabel(
+                            "ui.caption.inventory");
+                    }
+                    return true;
+                }
+                if (progression.GetDepartment<ShuttleCargoDepartment>()
+                        ?.IsActiveDepartment() != true)
+                {
+                    return false;
+                }
+                inventoryView?.gameObject.SetActive(false);
+                view.gameObject.SetActive(true);
+                view.Initialize(progression);
+                // The window keeps its own caption block; vanilla retitles it
+                // per tab and so must this.
+                _inventoryCaption(arsenal)?.ChangeLabel(
+                    "qmcentral.shuttle_caption");
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(LogPrefix
+                               + "shuttle pane toggle failed: " + e);
+                return false;
+            }
+        }
+
         internal static bool SwitchCentralOperator(ArsenalScreen screen,
             Mercenary mercenary, bool showOperatorPanel)
         {
@@ -526,10 +599,10 @@ namespace QM_CentralManagement
                 _centralAugmentationOpenRequested = true;
                 UI.Hide<ArsenalScreen>();
                 UI.Hide<AugmentationScreen>();
-                UI.Chain<AugmentationScreen>().Invoke(v =>
+                ShowCentralScreen(UI.Chain<AugmentationScreen>().Invoke(v =>
                 {
                     v.Configure(mercenary);
-                }).Show().Fallback<SpaceshipScreen>();
+                }));
                 return true;
             }
             catch (Exception e)
@@ -553,10 +626,10 @@ namespace QM_CentralManagement
                 _centralOpenRequested = true;
                 UI.Hide<AugmentationScreen>();
                 UI.Hide<ArsenalScreen>();
-                UI.Chain<ArsenalScreen>().Invoke(v =>
+                ShowCentralScreen(UI.Chain<ArsenalScreen>().Invoke(v =>
                 {
                     v.Configure(mercenary, showShuttle: false);
-                }).Show().Fallback<SpaceshipScreen>();
+                }));
                 return true;
             }
             catch (Exception e)

@@ -15,6 +15,14 @@ namespace QM_CentralManagement
         public int Version = 1;
         public string SelectedId;
         public List<LoadoutPreset> Presets = new List<LoadoutPreset>();
+        // Shuttle restock manifests ride in the same file (records SSEL / SM
+        // / SI). They are a different KIND of thing -- ship-wide, not
+        // per-mercenary -- but they are the same kind of user-authored,
+        // save-independent template, and this file already has the atomic
+        // write and round-trip verification a second file would have to
+        // duplicate. See ShuttleManifests.cs.
+        public string SelectedManifestId;
+        public List<ShuttleManifest> Manifests = new List<ShuttleManifest>();
     }
 
     [Serializable]
@@ -154,10 +162,30 @@ namespace QM_CentralManagement
 
         private static string NormalizeName(string name)
         {
+            return ClampName(name, SuggestName());
+        }
+
+        /// <summary>
+        /// Trim, fall back to a generated name, cap at the popup's input
+        /// limit. Shared with the shuttle manifests, which live in the same
+        /// file and need the same name rules.
+        /// </summary>
+        internal static string ClampName(string name, string fallback)
+        {
             name = (name ?? string.Empty).Trim();
             if (name.Length == 0)
-                name = SuggestName();
+                name = fallback ?? string.Empty;
             return name.Length <= 28 ? name : name.Substring(0, 28);
+        }
+
+        /// <summary>
+        /// Writes the shared file after a change made from outside this class.
+        /// The shuttle manifests sit in the same collection, so they persist
+        /// through the same verified write. See ShuttleManifests.cs.
+        /// </summary>
+        internal static void PersistShared()
+        {
+            Persist();
         }
 
         // Storage format, hand written and hand parsed.
@@ -181,9 +209,20 @@ namespace QM_CentralManagement
         //   S   <woundSlotId> <slotType> <sockets>    socket, belongs to P
         //   I   <woundSlotId> <slotType> <itemId> <order>   implant, belongs to P
         //   C   <storage> <itemId> <units>              carried item, belongs to P
+        //   SSEL <selectedManifestId>
+        //   SM  <id> <name> <updatedUtcTicks>          shuttle restock manifest
+        //   SI  <itemId> <units>                       manifest item, belongs to SM
         //
-        // Every E/A/S/I/C line attaches to the most recent P line.
-        private const int FileVersion = 3;
+        // Every E/A/S/I/C line attaches to the most recent P line, every SI
+        // line to the most recent SM line.
+        //
+        // The record-type switch has no default branch, so a file written by
+        // a NEWER version loses nothing when an older one reads it -- unknown
+        // records are skipped. It does lose them on the next write, which is
+        // the accepted cost of a single shared file; that is a downgrade
+        // hazard only, and the reason new record types are appended rather
+        // than folded into the existing ones.
+        private const int FileVersion = 4;
         private const string FileHeader =
             "# QM_CentralManagement loadout presets - tab separated, one record per line";
 
@@ -211,6 +250,7 @@ namespace QM_CentralManagement
         {
             var result = new LoadoutPresetCollection();
             LoadoutPreset current = null;
+            ShuttleManifest currentManifest = null;
 
             foreach (var line in lines)
             {
@@ -228,9 +268,47 @@ namespace QM_CentralManagement
                             ? f[1]
                             : null;
                         break;
+                    case "SSEL":
+                        result.SelectedManifestId =
+                            f.Length > 1 && f[1].Length > 0 ? f[1] : null;
+                        break;
+                    case "SM":
+                        if (f.Length < 4)
+                            break;
+                        // A manifest closes the preset that was being read, so
+                        // a malformed file cannot attach equipment lines to it.
+                        current = null;
+                        currentManifest = new ShuttleManifest
+                        {
+                            Id = f[1],
+                            Name = f[2],
+                            UpdatedUtcTicks = long.TryParse(f[3],
+                                NumberStyles.Integer,
+                                CultureInfo.InvariantCulture,
+                                out var manifestTicks) ? manifestTicks : 0L,
+                        };
+                        result.Manifests.Add(currentManifest);
+                        break;
+                    case "SI":
+                        if (currentManifest != null && f.Length >= 3)
+                        {
+                            var manifestUnits = ParseInt(f[2]);
+                            if (!string.IsNullOrWhiteSpace(f[1])
+                                && manifestUnits > 0)
+                            {
+                                currentManifest.Items.Add(
+                                    new ShuttleManifestEntry
+                                    {
+                                        ItemId = f[1],
+                                        Units = manifestUnits,
+                                    });
+                            }
+                        }
+                        break;
                     case "P":
                         if (f.Length < 6)
                             break;
+                        currentManifest = null;
                         current = new LoadoutPreset
                         {
                             Id = f[1],
@@ -305,6 +383,8 @@ namespace QM_CentralManagement
 
             result.Presets.RemoveAll(p => p == null
                                           || string.IsNullOrEmpty(p.Id));
+            result.Manifests.RemoveAll(m => m == null
+                                            || string.IsNullOrEmpty(m.Id));
             return result;
         }
 
@@ -314,6 +394,8 @@ namespace QM_CentralManagement
             sb.Append(FileHeader).Append('\n');
             sb.Append("V\t").Append(FileVersion).Append('\n');
             sb.Append("SEL\t").Append(Field(data.SelectedId)).Append('\n');
+            sb.Append("SSEL\t").Append(Field(data.SelectedManifestId))
+                .Append('\n');
 
             foreach (var preset in data.Presets)
             {
@@ -381,6 +463,31 @@ namespace QM_CentralManagement
                         .Append('\n');
                 }
             }
+
+            // Manifests last: an older build that drops the SM/SI records it
+            // does not understand then keeps the preset block byte-identical.
+            foreach (var manifest in data.Manifests ?? EmptyManifests)
+            {
+                if (manifest == null || string.IsNullOrEmpty(manifest.Id))
+                    continue;
+                sb.Append("SM\t").Append(Field(manifest.Id))
+                    .Append('\t').Append(Field(manifest.Name))
+                    .Append('\t').Append(manifest.UpdatedUtcTicks
+                        .ToString(CultureInfo.InvariantCulture))
+                    .Append('\n');
+                foreach (var item in manifest.Items ?? EmptyManifestItems)
+                {
+                    if (item == null || item.Units <= 0
+                        || string.IsNullOrWhiteSpace(item.ItemId))
+                    {
+                        continue;
+                    }
+                    sb.Append("SI\t").Append(Field(item.ItemId))
+                        .Append('\t').Append(item.Units
+                            .ToString(CultureInfo.InvariantCulture))
+                        .Append('\n');
+                }
+            }
             return sb.ToString();
         }
 
@@ -392,6 +499,10 @@ namespace QM_CentralManagement
             new List<LoadoutImplantEntry>();
         private static readonly List<LoadoutCarriedEntry> EmptyCarriedItems =
             new List<LoadoutCarriedEntry>();
+        private static readonly List<ShuttleManifest> EmptyManifests =
+            new List<ShuttleManifest>();
+        private static readonly List<ShuttleManifestEntry> EmptyManifestItems =
+            new List<ShuttleManifestEntry>();
         private static readonly List<string> EmptyStrings = new List<string>();
 
         /// <summary>
@@ -429,17 +540,23 @@ namespace QM_CentralManagement
                 // confirmed to have survived the round trip.
                 var expected = Data.Presets.Count(p => p != null
                     && !string.IsNullOrEmpty(p.Id));
+                var expectedManifests = Data.Manifests.Count(m => m != null
+                    && !string.IsNullOrEmpty(m.Id));
                 var temporaryPath = StoragePath + ".tmp";
                 File.WriteAllText(temporaryPath, text);
                 var roundTrip = Parse(File.ReadAllLines(temporaryPath));
                 var actual = roundTrip.Presets.Count;
+                var actualManifests = roundTrip.Manifests.Count;
                 var roundTripText = Serialize(roundTrip);
-                if (actual != expected || roundTripText != text)
+                if (actual != expected || actualManifests != expectedManifests
+                    || roundTripText != text)
                 {
                     Debug.LogError(Plugin.LogPrefix
                                    + "loadout presets did NOT survive the "
-                                   + "round trip (" + expected + " in, "
-                                   + actual + " out). Keeping the previous "
+                                   + "round trip (" + expected + " preset(s) / "
+                                   + expectedManifests + " manifest(s) in, "
+                                   + actual + " / " + actualManifests
+                                   + " out). Keeping the previous "
                                    + "file. Payload:\n" + text);
                     return;
                 }
@@ -447,7 +564,8 @@ namespace QM_CentralManagement
                 File.Copy(temporaryPath, StoragePath, true);
                 File.Delete(temporaryPath);
                 Plugin.DebugLog("persisted " + expected
-                                + " loadout preset(s) to " + StoragePath);
+                                + " loadout preset(s) and " + expectedManifests
+                                + " shuttle manifest(s) to " + StoragePath);
             }
             catch (Exception e)
             {
@@ -1659,30 +1777,71 @@ namespace QM_CentralManagement
             return result;
         }
 
-        private static IEnumerable<BasePickupItem> EnumerateCargoItems(
+        /// <summary>
+        /// Every hold a preset (or a shuttle manifest) may source items from,
+        /// in priority order: the cargo bays, then the fridge, then the
+        /// recycler while it is idle. Unbuilt departments and a running
+        /// recycling job are excluded -- taking from either would be taking
+        /// from something the player cannot open.
+        ///
+        /// The shuttle's own hold is deliberately NOT here: it is a
+        /// destination, and including it would let a restock feed on itself.
+        /// </summary>
+        internal static IEnumerable<ItemStorage> CargoStorages(
             MagnumCargo cargo, MagnumProgression progression)
         {
             if (cargo == null)
                 yield break;
             foreach (var storage in cargo.ShipCargo)
-            foreach (var item in storage.Items)
-                if (item != null)
-                    yield return item;
+                if (storage != null)
+                    yield return storage;
             if (progression?.HasStoreFridge == true
                 && cargo.FridgeStorage != null)
-            {
-                foreach (var item in cargo.FridgeStorage.Items)
-                    if (item != null)
-                        yield return item;
-            }
+                yield return cargo.FridgeStorage;
             if (progression?.HasStoreConstructorDepartment == true
                 && !cargo.RecyclingInProgress
                 && cargo.RecyclingStorage != null)
             {
-                foreach (var item in cargo.RecyclingStorage.Items)
-                    if (item != null)
-                        yield return item;
+                yield return cargo.RecyclingStorage;
             }
+        }
+
+        private static IEnumerable<BasePickupItem> EnumerateCargoItems(
+            MagnumCargo cargo, MagnumProgression progression)
+        {
+            foreach (var storage in CargoStorages(cargo, progression))
+            foreach (var item in storage.Items)
+                if (item != null)
+                    yield return item;
+        }
+
+        /// <summary>
+        /// Pulls up to <paramref name="wanted"/> units of an item out of the
+        /// ship's holds, ready to be moved into a destination storage.
+        ///
+        /// Returns the cargo item itself when the whole stack is wanted (the
+        /// caller's Move takes it out of its storage), or a freshly split
+        /// stack that belongs to no storage yet. <paramref name="units"/> is
+        /// how many units the returned item carries.
+        /// </summary>
+        internal static BasePickupItem TakeFromCargo(MagnumCargo cargo,
+            MagnumProgression progression, string itemId, int wanted,
+            out int units)
+        {
+            units = 0;
+            if (cargo == null || wanted <= 0)
+                return null;
+            var source = FindBestCargoItem(cargo, progression, itemId);
+            if (source == null)
+                return null;
+            units = Math.Min(wanted, Math.Max(1, (int)source.StackCount));
+            if (units >= source.StackCount)
+                return source;
+            var split = SplitCargoStack(source, (short)units);
+            if (split != null)
+                return split;
+            units = 0;
+            return null;
         }
 
         private static BasePickupItem FindBestCargoItem(MagnumCargo cargo,
@@ -1690,22 +1849,7 @@ namespace QM_CentralManagement
             Func<BasePickupItem, bool> predicate = null)
         {
             BasePickupItem best = null;
-            IEnumerable<ItemStorage> Storages()
-            {
-                foreach (var storage in cargo.ShipCargo)
-                    if (storage != null)
-                        yield return storage;
-                if (progression?.HasStoreFridge == true
-                    && cargo.FridgeStorage != null)
-                    yield return cargo.FridgeStorage;
-                if (progression?.HasStoreConstructorDepartment == true
-                    && !cargo.RecyclingInProgress
-                    && cargo.RecyclingStorage != null)
-                {
-                    yield return cargo.RecyclingStorage;
-                }
-            }
-            foreach (var storage in Storages())
+            foreach (var storage in CargoStorages(cargo, progression))
             foreach (var item in storage.Items)
             {
                 if (item == null || item.Id != itemId || item.StackCount <= 0

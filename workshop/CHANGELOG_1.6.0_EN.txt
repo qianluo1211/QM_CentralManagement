@@ -1,0 +1,72 @@
+[h1]Central Material Management 1.6.0 — Shuttle Manifests, Briefing Access, One-Click Repair[/h1]
+
+[i]Verified against game Patch 1.0.2.[/i]
+
+[h2]New: shuttle restock manifests[/h2]
+[list]
+[*]After every raid the game returns the cargo shuttle's hold to your storage and empties it, so it is guaranteed to be empty before every single deployment -- keeping a standing emergency kit on board meant re-packing it by hand every time. You can now save the hold as a named list and refill it in one click.
+[*][b]Two places to do it[/b]: on the pre-departure equipment screen, switch to the cargo shuttle tab and the strip above the window becomes manifest controls; or pick "Shuttle" from the new dropdown in the central panel's header and work there.
+[*][b]Automatic stocking[/b] (on by default): once a manifest is selected, the hold is topped up when the pre-departure screen opens AND again as the raid actually launches -- so you never have to open the equipment screen at all.
+[*][b]Top-up only[/b]: a manifest asking for 20 rounds with 5 already aboard moves 15. It never removes anything you put there yourself, and pressing it twice does nothing the second time.
+[*]Sourcing follows the loadout presets' own rules: ship cargo, then the fridge, then the recycler while it is idle; locked items are skipped, the best-condition instance wins, and split stacks keep their expiry time. Shortfalls and "no room left" are reported per line.
+[/list]
+
+[h2]New: loadout presets on the after-raid screen[/h2]
+[list]
+[*]The post-extraction screen now carries the loadout preset strip above the inventory window.
+[*]Applying a preset there is a selective unload: the gear and carried items the preset names stay on the agent, everything else goes to the hold -- the vanilla "unload to cargo" button, but with a filter.
+[/list]
+
+[h2]Central panel: the header control is a dropdown now[/h2]
+[list]
+[*]That one button used to mean four different things (show gear, hide gear, install augments, back to the arsenal) and none of them were visible before clicking it. It names what is on screen and opens a list of everywhere you can go: agent gear, shuttle, augments, hide.
+[*]Choosing "Shuttle" puts the game's OWN shuttle hold grid in the pane -- real drag and drop, real capacity, real stacking.
+[/list]
+
+[h2]Barter payouts, rebuilt[/h2]
+[list]
+[*]The list of what a station handed over for a quest delivery (the AnCom data chip and the like) was a wall of plain text. It is a proper row list now: vanilla item icons, hover for the full item card, and several stacks of the same item collapse into one line.
+[/list]
+
+[h2]Category fixes[/h2]
+[list]
+[*]New top-level category [b]ORDNANCE[/b]: grenades, mines, turrets (MG-359 and friends) and placeable cover (the armoured shield, the energy barrier).
+[*]Turrets, grenades and mines used to sit under AMMO and the placeable cover under SPECIAL -- a tab labelled "ammunition" holding a deployable turret. AMMO now means ammunition and nothing else.
+[*]The central panel and the station trade panel used to disagree about the same item id (ammo in one, weapons in the other). They now match.
+[/list]
+
+[h2]New: central management from the mission briefing[/h2]
+[list]
+[*]Central management used to be reachable only from the spaceship screen. Wanting the full catalogue while preparing a mission meant leaving the briefing, walking back to the Magnum, and picking the mission again afterwards.
+[*]There is now an entry on the mission briefing, on the same row as "Start operation", and the same [b]C[/b] shortcut works there.
+[*]It opens on the operator the briefing has [b]already selected[/b], with that operator's gear expanded beside the catalogue. Closing it returns to the briefing, whose equipment-weight readout refreshes, and you carry straight on to "Start operation".
+[*]It appears under exactly the same conditions as the vanilla "select equipment" button: technology unlocked and an operator chosen. Switch it off with [code]raidPrepCentral=false[/code].
+[/list]
+
+[h2]New: one-click repair for the selected agent[/h2]
+[list]
+[*]A REPAIR action in the footer mends all of the selected agent's damaged gear at once, paid out of ship storage. Repair kits hold five charges each, so a worn set of armour is dozens of drag operations by hand.
+[*][b]Scope[/b] is that agent's equipment slots plus backpack and vest contents -- exactly what the panel's agent pane shows. Kits the agent is [b]carrying[/b] are left alone, since those were packed for the raid, and the recycling bay is never touched.
+[*][b]Kits are spent before scrap parts[/b]: kits give some permanent max durability back, while rags, springs and plates trade permanent capacity for condition. Grabbing whichever matched first would quietly grind good gear down.
+[*][b]Nothing is ever repaired to destruction[/b]: vanilla applies the durability change first and only then notices the max-durability penalty hit 100%, turning the item into scrap. A batch action must not make that call, so the application that would finish an item off is skipped.
+[*]Equivalent to repairing by hand: it runs the game's own repair logic, raises the same repair proficiency, and recomputes the agent's resists afterwards.
+[*]Confirms before it runs, and shows a receipt afterwards listing what was actually spent -- kits counted in [b]uses[/b], single-use parts counted in [b]items[/b].
+[/list]
+
+[h2]New: sort by tech level[/h2]
+[list]
+[*]The sort menu gains TECH LEVEL, reading each item's own tech level, highest first.
+[*]It sits alongside NAME and QUANTITY and is available in [b]every category[/b], unlike the resist and damage sorts that only appear where they mean something.
+[/list]
+
+[h2]Fixes[/h2]
+[list]
+[*]Clicking a mod popup's own dead space no longer dismisses it. While naming a preset that click deselected the text field and closed the whole dialog, taking the typed name with it.
+[/list]
+
+[h2]New config options[/h2]
+[code]raidPrepCentral=true
+shuttleManifests=true
+shuttleAutoRestock=true[/code]
+
+[i]Shuttle manifests were suggested by Ashnal on the Workshop page. The briefing entry, one-click repair and tech-level sorting all came from the comments -- thanks to Grokov and Vatick.[/i]

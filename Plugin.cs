@@ -116,6 +116,7 @@ namespace QM_CentralManagement
         {
             CentralStationTradePanel.InvalidateSaveScopedCaches();
             _lastDeployedMercenaryProfileId = null;
+            _centralOpenedFromRaidPrep = false;
         }
 
         /// <summary>

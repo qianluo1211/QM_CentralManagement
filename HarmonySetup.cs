@@ -12,6 +12,8 @@ namespace QM_CentralManagement
             var harmony = new Harmony("QM_CentralManagement");
             TryPatch("localization", () => PatchLocalization(harmony));
             TryPatch("spaceship action button", () => PatchSpaceshipButton(harmony));
+            TryPatch("mission briefing action button",
+                () => PatchRaidPrepCentral(harmony));
             TryPatch("screen panel dispatch", () => PatchScreenPanels(harmony));
             TryPatch("central arsenal mode", () => PatchCentralArsenal(harmony));
             TryPatch("inventory view guards", () => PatchInventoryViewGuards(harmony));
@@ -19,6 +21,7 @@ namespace QM_CentralManagement
             TryPatch("search input isolation", () => PatchSearchInputIsolation(harmony));
             TryPatch("split-stack mouse wheel", () => PatchSplitStackWheel(harmony));
             TryPatch("ship loadout bar", () => PatchShipLoadout(harmony));
+            TryPatch("shuttle manifests", () => PatchShuttleManifests(harmony));
             TryPatch("station trade screen", () => PatchStationTrade(harmony));
         }
 

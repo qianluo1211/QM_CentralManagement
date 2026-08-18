@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MGSC;
@@ -105,12 +106,14 @@ namespace QM_CentralManagement
                 44f, 14f, "qmcentral.tip.preset_apply",
                 out _, out _presetApplyLabel);
             _presetApplyButton = PanelUi.ButtonOf(applyRoot);
-            PanelUi.BindClick(applyRoot, () => PresetPopup.OpenApply());
+            // Bound once to dispatchers: CommonButton.OnClick has no
+            // unsubscribe, so the mode is read at click time.
+            PanelUi.BindClick(applyRoot, OnPresetApplyClicked);
             var saveRoot = PanelUi.CreateButtonRoot("Save", rect, 264f, -2f,
                 46f, 14f, "qmcentral.tip.preset_save",
                 out _, out _presetSaveLabel);
             _presetSaveButton = PanelUi.ButtonOf(saveRoot);
-            PanelUi.BindClick(saveRoot, () => PresetPopup.OpenSave());
+            PanelUi.BindClick(saveRoot, OnPresetSaveClicked);
 
             _presetSummary = PanelUi.CreateText("Summary", rect, 4f, -18f,
                 258f, 24f, TextContext.IgnoreSize, 6f, PanelUi.OffColor,
@@ -120,7 +123,7 @@ namespace QM_CentralManagement
                 out _, out _presetDeleteLabel);
             PanelUi.MakeDangerButton(deleteRoot, _presetDeleteLabel);
             _presetDeleteButton = PanelUi.ButtonOf(deleteRoot);
-            PanelUi.BindClick(deleteRoot, () => PresetPopup.OpenDelete());
+            PanelUi.BindClick(deleteRoot, OnPresetDeleteClicked);
 
             // Parented to the bar and anchored just under the trigger, so
             // it opens where the control is instead of at a fixed offset from
@@ -208,6 +211,15 @@ namespace QM_CentralManagement
             if (_presetBarRoot == null)
                 return;
             ApplyPresetLayout();
+            // The bar drives shuttle manifests while the shuttle hold is the
+            // pane on screen: same six controls, same shape, different list.
+            // See CentralManagementPanel.Shuttle.cs.
+            if (ManifestBarMode)
+            {
+                RefreshManifestBar();
+                ApplyPresetFonts();
+                return;
+            }
             _presetTitle.text = Localization.Get("qmcentral.preset_title");
             _presetApplyLabel.text = Localization.Get(
                 "qmcentral.preset_apply");
@@ -245,6 +257,30 @@ namespace QM_CentralManagement
             _presetPopup?.ApplyFont(font);
         }
 
+        private void OnPresetApplyClicked()
+        {
+            if (ManifestBarMode)
+                RestockShuttleFromBar();
+            else
+                PresetPopup.OpenApply();
+        }
+
+        private void OnPresetSaveClicked()
+        {
+            if (ManifestBarMode)
+                OpenSaveManifest();
+            else
+                PresetPopup.OpenSave();
+        }
+
+        private void OnPresetDeleteClicked()
+        {
+            if (ManifestBarMode)
+                OpenDeleteManifest();
+            else
+                PresetPopup.OpenDelete();
+        }
+
         private void TogglePresetDropdown()
         {
             if (_presetDropdownRoot == null || UI.Drag.IsDragging)
@@ -260,35 +296,76 @@ namespace QM_CentralManagement
             _presetDropdownRoot.transform.SetAsLastSibling();
         }
 
+        /// <summary>One option of the selector, mode-independent.</summary>
+        private sealed class PresetOption
+        {
+            internal string Id;
+            internal string Label;
+        }
+
         private void RebuildPresetDropdown()
         {
+            // Only the source differs between the two modes; the rows are
+            // laid out once rather than in two near-copies.
+            var options = new List<PresetOption>();
+            string selectedId;
+            Action<string> onSelect;
+            if (ManifestBarMode)
+            {
+                foreach (var manifest in ShuttleManifestRepository.All
+                             .Where(m => m != null)
+                             .OrderByDescending(m => m.UpdatedUtcTicks))
+                {
+                    options.Add(new PresetOption
+                    {
+                        Id = manifest.Id,
+                        Label = manifest.Name + "   "
+                                + ShuttleManifestService.Summary(manifest),
+                    });
+                }
+                selectedId = LoadoutPresetRepository.Data.SelectedManifestId;
+                onSelect = ShuttleManifestRepository.Select;
+            }
+            else
+            {
+                foreach (var preset in LoadoutPresetRepository.Data.Presets
+                             .Where(p => p != null)
+                             .OrderByDescending(p => p.UpdatedUtcTicks))
+                {
+                    options.Add(new PresetOption
+                    {
+                        Id = preset.Id,
+                        Label = preset.Name + "   "
+                                + LoadoutPresetService.GetSummary(preset),
+                    });
+                }
+                selectedId = LoadoutPresetRepository.Data.SelectedId;
+                onSelect = LoadoutPresetRepository.Select;
+            }
+
             PanelUi.ClearDropdownRows(_presetDropdownRows);
-            var presets = LoadoutPresetRepository.Data.Presets
-                .Where(p => p != null)
-                .OrderByDescending(p => p.UpdatedUtcTicks).ToList();
             const float width = 220f;
             const float rowHeight = 17f;
             var height = Mathf.Max(rowHeight + 4f,
-                presets.Count * rowHeight + 4f);
+                options.Count * rowHeight + 4f);
             PanelUi.SetTopLeft((RectTransform)_presetDropdownRoot.transform,
                 72f, -17f, width, height);
-            for (var i = 0; i < presets.Count; i++)
+            for (var i = 0; i < options.Count; i++)
             {
-                var preset = presets[i];
-                var row = PanelUi.CreateButtonRoot("Preset" + i,
+                var option = options[i];
+                var row = PanelUi.CreateButtonRoot("Option" + i,
                     _presetDropdownRoot.transform, 2f,
                     -2f - i * rowHeight, width - 4f, rowHeight - 1f,
                     out var background, out var label);
-                label.text = preset.Name + "   "
-                             + LoadoutPresetService.GetSummary(preset);
+                label.text = option.Label;
                 label.alignment = TextAlignmentOptions.MidlineLeft;
                 label.margin = new Vector4(4f, 0f, 2f, 0f);
                 label.fontSize = 6f;
-                PanelUi.SetSurfaceSelected(background, preset.Id
-                    == LoadoutPresetRepository.Data.SelectedId);
+                PanelUi.SetSurfaceSelected(background,
+                    option.Id == selectedId);
                 PanelUi.BindClick(row, () =>
                 {
-                    LoadoutPresetRepository.Select(preset.Id);
+                    onSelect(option.Id);
                     CloseDropdown(_presetDropdownRoot);
                     RefreshPresetBar();
                 });

@@ -17,8 +17,16 @@ namespace QM_CentralManagement
     /// The bar is a sibling of the inventory window, placed against the
     /// window's real on-screen rect every time it is shown, so it follows the
     /// vanilla layout without depending on any hardcoded screen coordinates.
+    ///
+    /// It has TWO modes, chosen by the vanilla tab the screen is showing:
+    /// over the inventory tab it drives mercenary loadout presets, over the
+    /// cargo-shuttle tab it drives shuttle restock manifests. The controls
+    /// are the same four widgets either way, so the mode swaps their captions
+    /// and what they do rather than building a second strip -- the space
+    /// above the equipment window only fits one. See ShipLoadoutBar.Shuttle.cs
+    /// for the manifest half.
     /// </summary>
-    internal sealed class ShipLoadoutBar : MonoBehaviour
+    internal sealed partial class ShipLoadoutBar : MonoBehaviour
     {
         private const float BarWidth = 300f;
         private const float BarHeight = 22f;
@@ -42,7 +50,10 @@ namespace QM_CentralManagement
 
         private static ShipLoadoutBar _active;
 
-        private ArsenalScreen _screen;
+        // ScreenWithShipCargo, not ArsenalScreen: the same strip serves the
+        // pre-departure arsenal and the post-extraction screen, which are
+        // siblings rather than one deriving from the other.
+        private ScreenWithShipCargo _screen;
         private Mercenary _mercenary;
         private MagnumCargo _cargo;
         private SpaceTime _spaceTime;
@@ -51,6 +62,9 @@ namespace QM_CentralManagement
         private RectTransform _tabsRect;
         private bool _built;
         private bool _visible;
+        // True while the screen is showing the cargo-shuttle tab: the same
+        // four controls then drive shuttle manifests instead of loadouts.
+        private bool _shuttleMode;
 
         private GameObject _root;
         private TextMeshProUGUI _titleLabel;
@@ -116,7 +130,7 @@ namespace QM_CentralManagement
                  || _active._popup?.IsOpen == true))
             || ModInputGate.IsFrameBlocked;
 
-        internal static void RefreshFor(ArsenalScreen screen)
+        internal static void RefreshFor(ScreenWithShipCargo screen)
         {
             try
             {
@@ -153,18 +167,30 @@ namespace QM_CentralManagement
             }
         }
 
-        private void Refresh(ArsenalScreen screen)
+        private void Refresh(ScreenWithShipCargo screen)
         {
             _screen = screen;
             var panel = screen.GetComponent<CentralManagementPanel>();
             var centralActive = panel != null && panel.IsCentralMode;
-            var window = Plugin.InventoryWindowOf(screen);
-            var view = Plugin.InventoryViewOf(screen);
+            var window = Plugin.LoadoutWindowOf(screen);
+            var view = Plugin.LoadoutInventoryViewOf(screen);
             var mercenary = Plugin.ScreenMercenaryOf(screen);
             var cargo = Plugin.ScreenCargoOf(screen);
+            var progression = Plugin.ScreenProgressionOf(screen);
             var windowActive = window != null && window.activeSelf;
             var viewActive = view != null && view.gameObject.activeSelf;
-            var usable = !centralActive && windowActive && viewActive
+            // ArsenalScreen.Refresh activates exactly one of the two views, so
+            // which one is live IS the current tab -- no tab bookkeeping of our
+            // own, and no dependence on Configure's showShuttle argument
+            // reaching every refresh path.
+            var shuttleView = Plugin.LoadoutShuttleViewOf(screen);
+            var shuttleActive = Plugin.ShuttleManifestsEnabled
+                                && shuttleView != null
+                                && shuttleView.gameObject.activeSelf
+                                && ShuttleManifestService.StorageOf(
+                                    progression) != null;
+            var usable = !centralActive && windowActive
+                         && (viewActive || shuttleActive)
                          && mercenary != null && cargo != null
                          && cargo.ShipCargo.Count > 0;
 
@@ -196,9 +222,18 @@ namespace QM_CentralManagement
             _mercenary = mercenary;
             _cargo = cargo;
             _spaceTime = Plugin.ScreenSpaceTimeOf(screen);
-            _progression = Plugin.ScreenProgressionOf(screen);
+            _progression = progression;
+            // A mode change has to close whatever the OTHER mode had open:
+            // the dropdown lists two different things and the modal would
+            // confirm against the wrong one.
+            if (_shuttleMode != shuttleActive)
+            {
+                CloseDropdown(_dropdownRoot);
+                _popup?.Close();
+            }
+            _shuttleMode = shuttleActive;
             _windowRect = window.transform as RectTransform;
-            _tabsRect = Plugin.InventoryTabsViewOf(screen)?.transform
+            _tabsRect = Plugin.LoadoutTabsViewOf(screen)?.transform
                 as RectTransform;
 
             _active = this;
@@ -259,14 +294,17 @@ namespace QM_CentralManagement
                 PanelUi.SetTopRight((RectTransform)_applyRoot.transform, 104f, 2f,
                     44f, 18f);
                 _applyButton = PanelUi.ButtonOf(_applyRoot);
-                PanelUi.BindClick(_applyRoot, () => Popup.OpenApply());
+                // Bound once to a dispatcher: CommonButton.OnClick has no
+                // unsubscribe, so the mode is read at click time rather than
+                // rebound whenever the tab changes.
+                PanelUi.BindClick(_applyRoot, OnApplyClicked);
                 _saveRoot = PanelUi.CreateButtonRoot("Save", rect, 0f, 0f,
                     52f, 18f, "qmcentral.tip.preset_save", out _,
                     out _saveLabel);
                 PanelUi.SetTopRight((RectTransform)_saveRoot.transform, 50f, 2f,
                     52f, 18f);
                 _saveButton = PanelUi.ButtonOf(_saveRoot);
-                PanelUi.BindClick(_saveRoot, () => Popup.OpenSave());
+                PanelUi.BindClick(_saveRoot, OnSaveClicked);
                 _deleteRoot = PanelUi.CreateButtonRoot("Delete", rect, 0f, 0f,
                     46f, 18f, "qmcentral.tip.preset_delete", out _,
                     out _deleteLabel);
@@ -274,7 +312,7 @@ namespace QM_CentralManagement
                     46f, 18f);
                 PanelUi.MakeDangerButton(_deleteRoot, _deleteLabel);
                 _deleteButton = PanelUi.ButtonOf(_deleteRoot);
-                PanelUi.BindClick(_deleteRoot, () => Popup.OpenDelete());
+                PanelUi.BindClick(_deleteRoot, OnDeleteClicked);
 
                 _dropdownRoot = PanelUi.CreateUiObject("PresetDropdown", rect);
                 var dropdownRect = (RectTransform)_dropdownRoot.transform;
@@ -467,6 +505,12 @@ namespace QM_CentralManagement
         {
             if (_root == null)
                 return;
+            if (_shuttleMode)
+            {
+                RefreshShuttleLabels();
+                ApplyFonts();
+                return;
+            }
             _titleLabel.text = Localization.Get("qmcentral.preset_title");
             _applyLabel.text = Localization.Get("qmcentral.preset_apply");
             _saveLabel.text = Localization.Get("qmcentral.preset_save");
@@ -482,6 +526,30 @@ namespace QM_CentralManagement
             _selectedButton.SetInteractable(
                 LoadoutPresetRepository.Data.Presets.Count > 0);
             ApplyFonts();
+        }
+
+        private void OnApplyClicked()
+        {
+            if (_shuttleMode)
+                RestockShuttle();
+            else
+                Popup.OpenApply();
+        }
+
+        private void OnSaveClicked()
+        {
+            if (_shuttleMode)
+                OpenSaveManifest();
+            else
+                Popup.OpenSave();
+        }
+
+        private void OnDeleteClicked()
+        {
+            if (_shuttleMode)
+                OpenDeleteManifest();
+            else
+                Popup.OpenDelete();
         }
 
         private void ApplyFonts()
@@ -541,35 +609,76 @@ namespace QM_CentralManagement
             rect.position = new Vector3(center.x, center.y, corners[0].z);
         }
 
+        /// <summary>One option of the selector, mode-independent.</summary>
+        private sealed class DropdownItem
+        {
+            internal string Id;
+            internal string Label;
+        }
+
         private void RebuildDropdown()
         {
+            // The list is built from whichever store the current mode owns;
+            // everything below the source is identical, so the rows are laid
+            // out once rather than in two near-copies.
+            var items = new List<DropdownItem>();
+            string selectedId;
+            Action<string> onSelect;
+            if (_shuttleMode)
+            {
+                foreach (var manifest in ShuttleManifestRepository.All
+                             .Where(m => m != null)
+                             .OrderByDescending(m => m.UpdatedUtcTicks))
+                {
+                    items.Add(new DropdownItem
+                    {
+                        Id = manifest.Id,
+                        Label = manifest.Name + "   "
+                                + ShuttleManifestService.Summary(manifest),
+                    });
+                }
+                selectedId = LoadoutPresetRepository.Data.SelectedManifestId;
+                onSelect = ShuttleManifestRepository.Select;
+            }
+            else
+            {
+                foreach (var preset in LoadoutPresetRepository.Data.Presets
+                             .Where(p => p != null)
+                             .OrderByDescending(p => p.UpdatedUtcTicks))
+                {
+                    items.Add(new DropdownItem
+                    {
+                        Id = preset.Id,
+                        Label = preset.Name + "   "
+                                + LoadoutPresetService.GetSummary(preset),
+                    });
+                }
+                selectedId = LoadoutPresetRepository.Data.SelectedId;
+                onSelect = LoadoutPresetRepository.Select;
+            }
+
             PanelUi.ClearDropdownRows(_dropdownRows);
-            var presets = LoadoutPresetRepository.Data.Presets
-                .Where(p => p != null)
-                .OrderByDescending(p => p.UpdatedUtcTicks).ToList();
             const float width = 200f;
             const float rowHeight = 17f;
             var height = Mathf.Max(rowHeight + 4f,
-                presets.Count * rowHeight + 4f);
+                items.Count * rowHeight + 4f);
             PanelUi.SetTopLeft((RectTransform)_dropdownRoot.transform,
                 SelectedLeft, -21f, width, height);
-            for (var i = 0; i < presets.Count; i++)
+            for (var i = 0; i < items.Count; i++)
             {
-                var preset = presets[i];
-                var row = PanelUi.CreateButtonRoot("Preset" + i,
+                var item = items[i];
+                var row = PanelUi.CreateButtonRoot("Option" + i,
                     _dropdownRoot.transform, 2f, -2f - i * rowHeight,
                     width - 4f, rowHeight - 1f, out var background,
                     out var label);
-                label.text = preset.Name + "   "
-                             + LoadoutPresetService.GetSummary(preset);
+                label.text = item.Label;
                 label.alignment = TextAlignmentOptions.MidlineLeft;
                 label.margin = new Vector4(4f, 0f, 2f, 0f);
                 label.fontSize = 6f;
-                PanelUi.SetSurfaceSelected(background,
-                    preset.Id == LoadoutPresetRepository.Data.SelectedId);
+                PanelUi.SetSurfaceSelected(background, item.Id == selectedId);
                 PanelUi.BindClick(row, () =>
                 {
-                    LoadoutPresetRepository.Select(preset.Id);
+                    onSelect(item.Id);
                     CloseDropdown(_dropdownRoot);
                     RefreshLabels();
                 });

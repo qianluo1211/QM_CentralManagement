@@ -11,9 +11,15 @@ namespace QM_CentralManagement
         // config.txt switches, parsed in LoadConfig.
         internal static bool ShipLoadoutsEnabled { get; set; } = true;
         internal static float LoadoutBarOffsetY { get; set; } = 0f;
+        internal static bool ShuttleManifestsEnabled { get; set; } = true;
+        // On by default: it does nothing at all until the player has saved a
+        // manifest and selected it, so creating one IS the opt-in.
+        internal static bool ShuttleAutoRestock { get; set; } = true;
 
         private static AccessTools.FieldRef<ArsenalScreen, ItemTabsView>
             _inventoryTabsView;
+        private static AccessTools.FieldRef<AfterRaidScreen,
+            NoPlayerInventoryView> _afterRaidInventoryView;
 
         private static void PatchShipLoadout(Harmony harmony)
         {
@@ -22,6 +28,10 @@ namespace QM_CentralManagement
             ModInputGate.Register(() => ShipLoadoutBar.AnyInputCaptured);
             _inventoryTabsView = AccessTools.FieldRefAccess<ArsenalScreen,
                 ItemTabsView>("_inventoryTabsView");
+            // _shuttleCargoStorageView is bound in PatchCentralArsenal, which
+            // runs first; both features read it through ShuttleCargoViewOf.
+            _afterRaidInventoryView = AccessTools.FieldRefAccess<
+                AfterRaidScreen, NoPlayerInventoryView>("_inventoryView");
             PatchRequired(harmony, typeof(ArsenalScreen),
                 nameof(ArsenalScreen.Configure),
                 postfix: nameof(ShipLoadoutConfigurePostfix),
@@ -34,6 +44,82 @@ namespace QM_CentralManagement
                 nameof(ArsenalScreen.Refresh),
                 postfix: nameof(ShipLoadoutRefreshPostfix),
                 argumentTypes: new[] { typeof(bool), typeof(ItemTab) });
+
+            // The post-extraction screen is the second place a loadout is
+            // worth applying: it already exists to sort what came back, and
+            // applying a preset there puts the run's gear back on and drops
+            // everything the preset does not name into the hold -- the
+            // unload-to-cargo button, but selective.
+            PatchRequired(harmony, typeof(AfterRaidScreen),
+                nameof(AfterRaidScreen.Configure),
+                postfix: nameof(AfterRaidLoadoutPostfix),
+                argumentTypes: new[] { typeof(Mercenary) });
+            PatchRequired(harmony, typeof(AfterRaidScreen),
+                nameof(AfterRaidScreen.RefreshView),
+                postfix: nameof(AfterRaidLoadoutPostfix),
+                argumentTypes: Type.EmptyTypes);
+        }
+
+        /// <summary>
+        /// The screen's own inventory view. ArsenalScreen and AfterRaidScreen
+        /// name the same field but do not share a base that declares it.
+        /// </summary>
+        internal static NoPlayerInventoryView LoadoutInventoryViewOf(
+            ScreenWithShipCargo screen)
+        {
+            if (screen is ArsenalScreen arsenal)
+                return _inventoryView(arsenal);
+            if (screen is AfterRaidScreen afterRaid)
+                return _afterRaidInventoryView(afterRaid);
+            return null;
+        }
+
+        /// <summary>
+        /// The panel the bar anchors itself above. ArsenalScreen exposes it
+        /// as a field because central mode has to switch it on and off;
+        /// AfterRaidScreen does not, but on both screens it is simply the
+        /// inventory view's parent.
+        /// </summary>
+        internal static GameObject LoadoutWindowOf(ScreenWithShipCargo screen)
+        {
+            if (screen is ArsenalScreen arsenal)
+                return _inventoryWindow(arsenal);
+            var view = LoadoutInventoryViewOf(screen);
+            var parent = view == null ? null : view.transform.parent;
+            return parent == null ? null : parent.gameObject;
+        }
+
+        /// <summary>
+        /// Only the pre-departure arsenal has a tab strip above the window,
+        /// and only there does the shuttle hold exist to be manifested.
+        /// </summary>
+        internal static ItemTabsView LoadoutTabsViewOf(
+            ScreenWithShipCargo screen)
+        {
+            return screen is ArsenalScreen arsenal
+                ? _inventoryTabsView(arsenal)
+                : null;
+        }
+
+        internal static ShuttleCargoInSpaceStorageView LoadoutShuttleViewOf(
+            ScreenWithShipCargo screen)
+        {
+            return screen is ArsenalScreen arsenal
+                ? ShuttleCargoViewOf(arsenal)
+                : null;
+        }
+
+        private static void AfterRaidLoadoutPostfix(AfterRaidScreen __instance)
+        {
+            try
+            {
+                ShipLoadoutBar.RefreshFor(__instance);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(LogPrefix
+                               + "after-raid loadout hook failed: " + e);
+            }
         }
 
         // Thin accessors for the FieldRefs bound in PatchCentralArsenal, so
@@ -60,16 +146,27 @@ namespace QM_CentralManagement
             ArsenalScreen screen)
             => _inventoryTabsView(screen);
 
+        internal static ShuttleCargoInSpaceStorageView ShuttleCargoViewOf(
+            ArsenalScreen screen)
+            => _shuttleCargoStorageView(screen);
+
         internal static PerkFactory ScreenPerkFactoryOf(
             ScreenWithShipCargo screen)
             => _screenPerkFactory(screen);
 
 
         private static void ShipLoadoutConfigurePostfix(
-            ArsenalScreen __instance)
+            ArsenalScreen __instance, bool showShuttle)
         {
             try
             {
+                // Configure is the "screen opened" moment, so an automatic
+                // top-up happens once per visit rather than on every refresh.
+                // showShuttle is the game's own test for "this is the
+                // pre-departure arsenal": MercenariesScreen and
+                // SpaceshipScreen both pass false and have no shuttle to fill.
+                if (showShuttle)
+                    ShipLoadoutBar.AutoRestock(__instance);
                 ShipLoadoutBar.RefreshFor(__instance);
             }
             catch (Exception e)

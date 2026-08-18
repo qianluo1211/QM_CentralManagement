@@ -8,9 +8,16 @@
 # Extra diagnostic messages in Player.log.
 debugLogging=false
 
-# Spaceship shortcut for central management. Use a Unity KeyCode name;
-# set to None to disable it.
+# Shortcut for central management, on the spaceship screen and on the
+# mission briefing. Use a Unity KeyCode name; set to None to disable it.
 shortcutKey=C
+
+# Central management button on the mission briefing screen, next to
+# "Start operation". Opens the panel on the operator the briefing has
+# already selected, with that operator's gear expanded beside the
+# catalogue; closing it returns to the briefing. Needs the central
+# management technology, and only appears once an operator is chosen.
+raidPrepCentral=true
 
 # Pre-departure loadout strip on the ship's equipment screen (no tech
 # unlock required). Set to false to hide it completely.
@@ -19,6 +26,22 @@ shipLoadouts=true
 # Vertical nudge for the loadout strip, in canvas units. Positive moves
 # it further away from the equipment window.
 loadoutBarOffsetY=0
+
+# Shuttle restock manifests. On the pre-departure equipment screen, the
+# loadout strip switches to manifest controls while the "cargo shuttle"
+# tab is open: save what is in the shuttle hold as a named list, then
+# refill it from ship cargo in one click. Needs the cargo shuttle
+# technology; the game empties that hold after every raid, which is what
+# this is for. The controls live on the loadout strip, so shipLoadouts
+# must be true as well.
+shuttleManifests=true
+
+# Top up the shuttle from the selected manifest automatically: once when the
+# pre-departure screen opens, and again as the raid actually launches, so the
+# hold is filled even if that screen is never opened. Only ever ADDS what is
+# missing, never removes anything, and stays silent -- shortfalls go to
+# Player.log. Does nothing until a manifest has been saved and selected.
+shuttleAutoRestock=true
 
 # ---------------------------------------------------------------------------
 # Station trade screen (needs the central management technology unlocked).

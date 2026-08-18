@@ -170,11 +170,29 @@ namespace QM_CentralManagement
                 ConfigOption.Key_("shortcutKey", allowNone: true,
                     () => _centralShortcutKey, v => _centralShortcutKey = v),
 
+                // --- mission briefing entry point --------------------------
+                ConfigOption.Flag("raidPrepCentral",
+                    () => RaidPrepCentralEnabled,
+                    v => RaidPrepCentralEnabled = v,
+                    "qmcentral.mcm.raidPrepCentral",
+                    "qmcentral.mcm.raidPrepCentral.tip"),
+
                 // --- pre-departure ship loadout strip ---------------------
                 ConfigOption.Flag("shipLoadouts",
                     () => ShipLoadoutsEnabled, v => ShipLoadoutsEnabled = v),
                 ConfigOption.Decimal("loadoutBarOffsetY", -100f, 100f,
                     () => LoadoutBarOffsetY, v => LoadoutBarOffsetY = v),
+
+                // --- shuttle restock manifests -----------------------------
+                ConfigOption.Flag("shuttleManifests",
+                    () => ShuttleManifestsEnabled,
+                    v => ShuttleManifestsEnabled = v,
+                    "qmcentral.mcm.shuttleManifests",
+                    "qmcentral.mcm.shuttleManifests.tip"),
+                ConfigOption.Flag("shuttleAutoRestock",
+                    () => ShuttleAutoRestock, v => ShuttleAutoRestock = v,
+                    "qmcentral.mcm.shuttleAutoRestock",
+                    "qmcentral.mcm.shuttleAutoRestock.tip"),
 
                 // --- station trade screen ----------------------------------
                 ConfigOption.Flag("stationTrade",

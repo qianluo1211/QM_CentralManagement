@@ -1,4 +1,4 @@
-# QM Central Management —— 中央物资管理（1.5.1）
+# QM Central Management —— 中央物资管理（1.6.0）
 
 ## 已实现
 
@@ -20,7 +20,16 @@
 - 鼠标位于中央管理面板内时，滚轮可直接前后翻页；打开游戏本体的物品拆分滑块后，滚轮每格调整 1 个。
 - 搜索栏右侧增加动态排序菜单：普通物品可按名称或数量排序；装备“全部”会严格按游戏 `ArmorSets` 正式配置聚拢套装，也可和头盔、护甲、护腿、靴子一样按总抗性或各伤害类型抗性降序排列；武器可按总伤害强度或具体伤害类型排序，弹药按对应伤害类型与伤害倍率强度排序。切换同一大类的细分类时保留当前排序。
 - 植入体分类增加动态“部位”二级筛选，直接读取植入体的安装槽位；生体植入物也会通过其伤口槽记录识别可安装部位。
+- 排序菜单新增“科技等级”，读取物品自身的 `ItemRecord.TechLevel`，在所有分类下都可用（与“名称”“数量”并列），按科技等级从高到低排列。
+- 底栏新增“维修”按钮：一键维修**当前选中特工身上**的全部受损装备，走的是游戏本体的维修逻辑，所以兼容规则、耐久倍率和耗材消耗完全与手动拖拽一致。
+  - **维修范围**是该特工的 `Inventory.AllContainers`——身上穿戴的全部装备栏，以及背包和弹挂里的物品，也就是面板左侧特工面板显示的那些。未选中特工时按钮不可用。
+  - **耗材只从飞船库存出**（1～7 号仓与冷藏区）。回收舱不动（那些本来就要销毁），**特工自己携带的维修包也不会被消耗**——那是准备带去出战的，在基地悄悄烧掉只会帮倒忙；想用就手动拖。
+  - **优先消耗维修包，其次才是零件**：维修包（`MaxCapacity` 为正）会返还一部分永久耐久上限，而破布、弹簧、装甲板这类零件（`MaxCapacity` 为负）是拿永久上限换当前耐久。随手抓一个匹配的会悄悄把好装备磨废。
+  - **绝不会把任何东西修报废**：原版是先扣耐久再判断上限惩罚是否满 100%，满了就把物品变成废铁；批量操作不能替玩家做这个决定，所以会修到报废的那一次维修不会执行（惩罚值按当前特工的耐久倍率换算后再判断，与原版一致）。
+  - 与原版手动维修等价：每次成功维修都会照常触发维修相关的技能经验，修完后重算该特工的抗性（因为身上的护甲状态变了）。
+  - 执行前有确认对话框（复用原版对话框，与批量回收一致），执行后弹出结算清单，列出实际消耗了哪些耗材、各多少个。
 - 飞船入口改为中央管理专用横向按钮，不再克隆原版货舱按钮；默认快捷键为 `C`，可在 `config.txt` 中通过 `shortcutKey` 修改或设为 `None` 关闭。
+- 任务简报界面（选好任务和干员的那一屏）左下角增加中央物资管理入口，与右下角“开始行动”同一行，同一个 `C` 快捷键也可用。它直接以简报里已选中的干员打开面板，并默认展开该干员的装备栏，关闭后回到简报（装备重量随之刷新）。出现条件与原版“选择装备”按钮一致：已解锁科技并已选定干员；可用 `raidPrepCentral` 关闭。
 
 ## 空间站贸易面板
 
@@ -35,7 +44,7 @@
 
 ## Mod 设置菜单（MCM）
 
-- 可选集成 Crynano Mod Configuration Menu：订阅后可在游戏内 Mod 设置页直接修改 `stationTrade`、`tradeConfirm`、`autoUnlockTech`、`debugTradeLayout`，保存立即生效并写入 `mcm_settings.txt`（未订阅 MCM 时也生效）。
+- 可选集成 Crynano Mod Configuration Menu：订阅后可在游戏内 Mod 设置页直接修改 `raidPrepCentral`、`shuttleManifests`、`shuttleAutoRestock`、`stationTrade`、`tradeConfirm`、`autoUnlockTech`、`debugTradeLayout`，保存立即生效并写入 `mcm_settings.txt`（未订阅 MCM 时也生效）。
 - MCM 条目随游戏语言显示中文/英文。
 
 ## 批量回收保护
@@ -46,6 +55,7 @@
 - 搬运前后检查全部库存的物品堆总数，异常会写入 `Player.log`。
 
 ## 版本记录
+- 1.6.0 穿梭机补给清单：把货运穿梭机货舱存成具名清单并一键补满，可在出战瞬间自动补齐（只补缺口，不拿走已放入的东西）；出战准备界面的“货运穿梭机”页签与中央面板均可操作。结算界面新增装备预设栏（应用即“有选择的卸载”）。中央面板右上角改为下拉菜单（特工装备 / 穿梭机 / 安装义体 / 收起），穿梭机页直接使用原版货舱格子。以物换物结算改为带物品图标的列表。新增“投掷部署”分类（手雷、地雷、炮台、可放置掩体），两个面板分类统一。修复模组弹窗点击自身空白处会关闭的问题。预设文件格式升至 V4。
 - 1.5.1 贸易面板改为居中并按实际设计空间自适应：修复超宽屏（21:9 / 32:9）下面板被钉在左上角的问题——游戏按宽高比切换 UI 缩放模式，超宽屏的设计空间是变宽而非变矮。宽度铺满画布（设上限）、行数按可用高度拟合，靠右控件整体跟随右边缘；4:3 / 5:4 每页 18～19 行；16:9 布局与 1.5.0 逐像素一致；游戏内改分辨率即时重排；贸易页脚不再每帧重拼结算文字。
 - 1.5.0 空间站贸易面板：替换原版交易界面，买卖同屏、购物车合并交易、扫选与快捷键、以物换物清单弹窗；价格沿用原版公式。可选集成 Mod Configuration Menu（游戏内设置）；autoUnlockTech 对新建存档生效；修复英文界面下 Mod 设置显示中文。
 - 1.4.1 安装义体界面自动隐藏出发前预设栏，不再顶偏装备界面；出发前装备界面的一键应用预设现在包含义体 / 机械臂，同样做缺失、锁定与义体部门校验；保存与应用预设的弹窗文案与中央面板统一。
@@ -102,7 +112,12 @@
 
 - `debugLogging=false`：详细日志。
 - `recycleConfirmSeconds=4`：已废弃（批量回收改由原版确认对话框负责），仅为兼容旧配置保留。
-- `shortcutKey=C`：飞船主界面快捷键，使用 Unity `KeyCode` 名称；设为 `None` 可关闭。
+- `shortcutKey=C`：飞船主界面与任务简报界面的快捷键，使用 Unity `KeyCode` 名称；设为 `None` 可关闭。
+- `raidPrepCentral=true`：任务简报界面的中央物资管理入口按钮。
+- `shipLoadouts=true`：出战准备装备界面上方的装备预设条（无需解锁科技）；设为 false 完全隐藏。
+- `loadoutBarOffsetY=0`：装备预设条的垂直微调（画布单位），正值远离装备窗口。
+- `shuttleManifests=true`：穿梭机补给清单（预设条在「货运穿梭机」页签下切换为清单控件；需要 `shipLoadouts=true` 与货运穿梭机科技）。
+- `shuttleAutoRestock=true`：按所选清单自动补满穿梭机（只补缺口，从不拿走东西）。
 - `stationTrade=true`：是否用本模组替换原版空间站交易界面（门槛 = 本开关 + 已解锁“中央物资管理”科技）。
 - `autoUnlockTech=false`：每个存档（含新建）自动解锁“中央物资管理”科技。
 - `tradeConfirm=false`：整笔交易前二次确认。
@@ -110,4 +125,4 @@
 - `quantityShiftStep=10` / `quantityCtrlStep=100` / `quantityCtrlShiftStep=1000`：Shift / Ctrl / Ctrl+Shift 点击与扫选的步进。
 - `shortcutTogglePane=B`、`shortcutPrevPage=LeftBracket`、`shortcutNextPage=RightBracket`、`shortcutTrade=D`、`shortcutClearCart=Delete`、`shortcutSelectAll=A`：贸易面板快捷键（`None` 关闭）。
 
-已订阅 Crynano Mod Configuration Menu 时，`stationTrade`、`tradeConfirm`、`autoUnlockTech`、`debugTradeLayout` 可直接在游戏内 Mod 设置页修改，保存后立即生效并写入 `mcm_settings.txt`。
+已订阅 Crynano Mod Configuration Menu 时，`raidPrepCentral`、`shuttleManifests`、`shuttleAutoRestock`、`stationTrade`、`tradeConfirm`、`autoUnlockTech`、`debugTradeLayout` 可直接在游戏内 Mod 设置页修改，保存后立即生效并写入 `mcm_settings.txt`。

@@ -119,6 +119,10 @@ namespace QM_CentralManagement
             Weapons,
             Armor,
             Ammo,
+            // Kept in step with CentralManagementPanel.CargoCategory: the two
+            // panels used to disagree about grenades, mines and turrets --
+            // weapons here, ammunition there -- for the same item id.
+            Ordnance,
             Medical,
             Food,
             Materials,
@@ -188,6 +192,7 @@ namespace QM_CentralManagement
             && _instance._root.activeInHierarchy
             && (_instance.AnyInputFocused
                 || _instance.HasOpenDropdown()
+                || _instance.IsExchangePopupOpen
                 || UI.IsShowing<ConfirmDialogWindow>()
                 );
 
@@ -333,9 +338,10 @@ namespace QM_CentralManagement
         private int _pointsShown;
         // Items received through a barter/quest exchange (e.g. handing the
         // AnCom data chip over) are moved straight to cargo, but the player
-        // still needs to see what the station gave back: the summary lines
-        // are shown in a dialog after the trade finishes.
-        private List<string> _pendingExchangeSummary;
+        // still needs to see what the station gave back: the payout is shown
+        // in ExchangeSummaryPopup after the trade finishes.
+        private List<ExchangeItemLine> _pendingExchangeSummary;
+        private ExchangeSummaryPopup _exchangePopup;
         // The language the panel was last built with: the pooled panel
         // survives screen closes, so a stale build must be discarded when
         // the game language changed meanwhile.
@@ -477,6 +483,11 @@ namespace QM_CentralManagement
             IsPanelActive = false;
             _sweepActive = false;
             _pressTracked = false;
+            _exchangePopup?.Hide();
+            // A payout is normally listed in the same call that records it;
+            // if a throw in between ever stops that, it dies with the screen
+            // rather than surfacing on top of the NEXT station's trade.
+            _pendingExchangeSummary = null;
             if (_root != null)
                 _root.SetActive(false);
             _buyWallet.Clear();
@@ -492,6 +503,7 @@ namespace QM_CentralManagement
         internal void RestoreVanillaUi()
         {
             IsPanelActive = false;
+            _exchangePopup?.Hide();
             if (_root != null)
                 _root.SetActive(false);
             ShowHiddenVanillaUi();
@@ -822,6 +834,8 @@ namespace QM_CentralManagement
                    && _sortDropdownRoot.activeInHierarchy;
         }
 
+        private bool IsExchangePopupOpen => _exchangePopup?.IsOpen == true;
+
         /// <summary>
         /// debugTradeLayout=true dumps the vanilla screen's real hierarchy so
         /// layout problems can be fixed against the actual data.
@@ -1049,6 +1063,13 @@ namespace QM_CentralManagement
                 BuildCategoryChips(_root.transform);
                 BuildList(_root.transform);
                 BuildFooter(_root.transform);
+                // Parented to the panel, not to the screen: HideVanillaUi
+                // switches off every child BESIDE the panel, so an overlay
+                // built next to it would be treated as vanilla chrome and
+                // brought back on the restore.
+                _exchangePopup = new ExchangeSummaryPopup(
+                    ModInputGate.ConsumePointerRelease, CloseDropdowns);
+                _exchangePopup.Build(_root.transform);
                 ApplyLayout();
 
                 // Any click anywhere in the panel closes an open dropdown;
@@ -1083,6 +1104,8 @@ namespace QM_CentralManagement
             }
             _categoryTabs.Clear();
             _sortDropdownRows.Clear();
+            _exchangePopup?.Discard();
+            _exchangePopup = null;
             // The cached readouts belong to labels that are about to die --
             // and a language switch replaces the format strings too.
             _summaryValid = false;
@@ -2197,10 +2220,12 @@ namespace QM_CentralManagement
             {
                 case ItemClass.Weapon:
                 case ItemClass.ThrowableWeapon:
+                    return TradeCategory.Weapons;
                 case ItemClass.Grenade:
                 case ItemClass.Mine:
                 case ItemClass.Turret:
-                    return TradeCategory.Weapons;
+                case ItemClass.PlaceableObstacle:
+                    return TradeCategory.Ordnance;
                 case ItemClass.Helmet:
                 case ItemClass.Armor:
                 case ItemClass.Leggings:
@@ -2235,7 +2260,6 @@ namespace QM_CentralManagement
                 case ItemClass.BioAug:
                 case ItemClass.CyberneticAug:
                 case ItemClass.QuasiAug:
-                case ItemClass.PlaceableObstacle:
                 case ItemClass.Key:
                     return TradeCategory.Materials;
                 default:
@@ -2818,8 +2842,22 @@ namespace QM_CentralManagement
                 return;
             var lines = _pendingExchangeSummary;
             _pendingExchangeSummary = null;
-            var text = Localization.Get("qmtrade.exchange_title") + "\n"
-                       + string.Join("\n", lines);
+            var title = Localization.Get("qmtrade.exchange_title");
+            if (_exchangePopup != null)
+            {
+                _exchangePopup.Show(title, lines);
+                return;
+            }
+            // The panel's UI failed to build (EnsureBuilt threw and left the
+            // vanilla screen in charge). A payout must still be reported, so
+            // fall back to the game's own alert and its plain text list.
+            var text = title;
+            foreach (var line in lines)
+            {
+                text += "\n" + string.Format(
+                    Localization.Get("qmtrade.exchange_item"),
+                    ItemNameOf(line.ItemId), line.Count);
+            }
             UI.Chain<AlertDialogWindow>().Invoke(v =>
                 v.Configure(text)).Show();
         }
@@ -2959,14 +2997,36 @@ namespace QM_CentralManagement
                 // manual transfer, we hand them straight to the cargo -- but
                 // remember what was received so the player can see the
                 // exchange after the trade.
-                var receivedLines = new List<string>();
+                //
+                // Id and count are read BEFORE the item is handed over:
+                // AddCargo may merge the stack into one already in the hold
+                // and leave this object empty behind it. One line per item
+                // TYPE, so a payout that arrives as several stacks of the
+                // same thing reads as a single row.
+                var receivedLines = new List<ExchangeItemLine>();
+                var receivedIndex = new Dictionary<string, int>(
+                    StringComparer.Ordinal);
                 foreach (var item in result)
                 {
+                    if (item == null)
+                        continue;
+                    var id = item.Id;
+                    var count = item.StackCount;
                     MagnumCargoSystem.AddCargo(_cargo, _spaceTime, item,
                         ActiveCargo());
-                    receivedLines.Add(string.Format(
-                        Localization.Get("qmtrade.exchange_item"),
-                        ItemNameOf(item.Id), item.StackCount));
+                    if (string.IsNullOrEmpty(id))
+                        continue;
+                    if (receivedIndex.TryGetValue(id, out var at))
+                    {
+                        receivedLines[at].Count += count;
+                        continue;
+                    }
+                    receivedIndex[id] = receivedLines.Count;
+                    receivedLines.Add(new ExchangeItemLine
+                    {
+                        ItemId = id,
+                        Count = count,
+                    });
                 }
                 if (receivedLines.Count > 0)
                     _pendingExchangeSummary = receivedLines;
@@ -3075,6 +3135,15 @@ namespace QM_CentralManagement
             // covers the case where the parent rect was not yet driven when
             // the panel was first built.
             RefitToSurface();
+            if (IsExchangePopupOpen)
+            {
+                // The modal owns Escape and Enter while it is up, and the
+                // game's raw drag controller has to stay paused underneath
+                // it -- the same contract the preset popup runs under.
+                UI.Drag.Pause(0.08f);
+                _exchangePopup.HandleKeys();
+                return;
+            }
             UpdateSweepInput();
             UpdateShortcuts();
             if (_listDirty)

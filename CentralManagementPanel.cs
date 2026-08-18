@@ -67,6 +67,12 @@ namespace QM_CentralManagement
             Weapons,
             Equipment,
             Ammo,
+            // Grenades, mines and turrets used to ride along in Ammo, which
+            // put a deployable turret under a tab labelled "ammunition" -- the
+            // label was a strict subset of the contents. They are their own
+            // tab now and Ammo means rounds only. NOT called Deployables:
+            // CargoDetail already uses that name for PlaceableObstacle.
+            Ordnance,
             Supplies,
             Augments,
             Materials,
@@ -90,7 +96,8 @@ namespace QM_CentralManagement
             Boots,
             Backpack,
             Vest,
-            Ammunition,
+            // Ammunition retired with the Ammo tab's split: that tab now
+            // holds one item class, so it has nothing left to sub-filter.
             Grenades,
             Mines,
             Turrets,
@@ -127,6 +134,7 @@ namespace QM_CentralManagement
         {
             Name,
             Quantity,
+            TechLevel,
             Set,
             TotalResist,
             TotalDamage,
@@ -215,6 +223,7 @@ namespace QM_CentralManagement
         private GameObject _previousPageRoot;
         private GameObject _nextPageRoot;
         private GameObject _recycleRoot;
+        private GameObject _repairRoot;
         private TMP_InputField _search;
         private TextMeshProUGUI _searchText;
         private TMP_Text _searchPlaceholder;
@@ -240,6 +249,13 @@ namespace QM_CentralManagement
         private TextMeshProUGUI _clearFiltersLabel;
         private TextMeshProUGUI _recycleLabel;
         private CommonButton _recycleButton;
+        private TextMeshProUGUI _repairLabel;
+        private CommonButton _repairButton;
+        // Receipt for the batch repair, sharing the trade panel's item
+        // list modal. Parented to the SCREEN, not to the panel rect,
+        // which at 282 wide is narrower than the popup itself.
+        private ExchangeSummaryPopup _repairSummary;
+        private int _repairableCount;
         private TextMeshProUGUI _selectFilteredLabel;
         private TextMeshProUGUI _clearLabel;
         private TextMeshProUGUI _closeLabel;
@@ -308,18 +324,22 @@ namespace QM_CentralManagement
             && ((_instance._search != null && _instance._search.isFocused)
                 || UI.IsShowing<CommonContextMenu>()
                 || _instance.IsPresetPopupOpen
+                || _instance.IsRepairSummaryOpen
                 || _instance.HasOpenDropdown());
 
-        // The panel's four popup lists. HasOpenDropdown and CloseAllDropdowns
-        // are the ONLY places that enumerate them -- a fifth list is added to
-        // both and everything else (the input gate, the wheel guard, every
-        // "close the others first" path) follows automatically.
+        private bool IsRepairSummaryOpen => _repairSummary?.IsOpen == true;
+
+        // The panel's popup lists. HasOpenDropdown and CloseAllDropdowns are
+        // the ONLY places that enumerate them -- a new list is added to both
+        // and everything else (the input gate, the wheel guard, every "close
+        // the others first" path) follows automatically.
         private bool HasOpenDropdown()
         {
             return IsDropdownOpen(_operatorDropdownRoot)
                    || IsDropdownOpen(_sortDropdownRoot)
                    || IsDropdownOpen(_slotFilterDropdownRoot)
-                   || IsDropdownOpen(_presetDropdownRoot);
+                   || IsDropdownOpen(_presetDropdownRoot)
+                   || IsDropdownOpen(_paneDropdownRoot);
         }
 
         private void CloseAllDropdowns()
@@ -328,6 +348,7 @@ namespace QM_CentralManagement
             CloseDropdown(_sortDropdownRoot);
             CloseDropdown(_slotFilterDropdownRoot);
             CloseDropdown(_presetDropdownRoot);
+            CloseDropdown(_paneDropdownRoot);
         }
 
         private static bool IsDropdownOpen(GameObject dropdown)
@@ -395,6 +416,11 @@ namespace QM_CentralManagement
             {
                 Plugin.SetCentralOperatorPanelVisible(_screen,
                     _operatorPanelVisible);
+                // Re-assert the pane: the call above hands the window back to
+                // the equipment view whenever it has to re-initialize it, so
+                // a pooled re-enable would otherwise drop the shuttle hold.
+                Plugin.SetCentralShuttleViewVisible(_screen,
+                    _shuttleViewVisible);
                 ApplyResponsiveLayout();
                 // ApplyResponsiveLayout must leave the detail row in its
                 // final category-specific geometry.  Refresh it immediately
@@ -435,6 +461,9 @@ namespace QM_CentralManagement
             _search.SetTextWithoutNotify(string.Empty);
             ApplyFont();
             RebuildAndRefresh();
+            // After the window's visibility is settled: a shuttle pane
+            // requested from the augmentation screen lands here.
+            RestorePaneAfterConfigure();
             RefreshPresetBar();
             _panelSessionInitialized = true;
             // Reveal only after all labels, selection colours and rects have
@@ -449,6 +478,7 @@ namespace QM_CentralManagement
         {
             CloseItemMenu();
             ClosePresetPopup();
+            _repairSummary?.Hide();
             CloseAllDropdowns();
             ClearPendingSplit();
             _centralMode = false;
@@ -457,6 +487,14 @@ namespace QM_CentralManagement
             _search?.DeactivateInputField();
             if (_root != null)
                 _root.SetActive(false);
+            // The shuttle pane borrows a VANILLA view. Leaving it switched on
+            // would hand the next ordinary Arsenal opening a shuttle grid
+            // where its equipment should be.
+            if (_shuttleViewVisible)
+            {
+                Plugin.SetCentralShuttleViewVisible(_screen, false);
+                _shuttleViewVisible = false;
+            }
             HidePresetUi();
             if (_vanillaCargoWindow != null)
                 _vanillaCargoWindow.SetActive(true);
@@ -523,6 +561,9 @@ namespace QM_CentralManagement
                         barParent = window.transform;
                 }
                 BuildPresetUi(barParent, parent);
+                _repairSummary = new ExchangeSummaryPopup(
+                    ModInputGate.ConsumePointerRelease, CloseAllDropdowns);
+                _repairSummary.Build(parent);
             }
             catch
             {
@@ -554,9 +595,15 @@ namespace QM_CentralManagement
             _operatorDropdownRoot = null;
             _sortRoot = null;
             _sortDropdownRoot = null;
+            _repairRoot = null;
+            _repairButton = null;
+            _repairLabel = null;
             _slotFilterRoot = null;
             _slotFilterDropdownRoot = null;
+            DiscardShuttleUi();
             DiscardPresetUi();
+            _repairSummary?.Discard();
+            _repairSummary = null;
         }
 
         private void BuildHeader(Transform parent)
@@ -594,11 +641,16 @@ namespace QM_CentralManagement
             _nextOperatorButton = PanelUi.ButtonOf(_nextOperatorRoot);
             PanelUi.BindClick(_nextOperatorRoot, () => CycleOperator(1));
 
-            _operatorPanelRoot = PanelUi.CreateButtonRoot("OperatorPanel",
-                _headerRoot.transform, 164f, -2f, 66f, 13f,
-                "qmcentral.tip.operator_panel", out _, out _operatorPanelLabel);
+            // A dropdown, not a button: this control used to mean four
+            // different things depending on the mode, and none of them were
+            // visible before clicking. See CentralManagementPanel.Shuttle.cs.
+            _operatorPanelRoot = PanelUi.CreateDropdownTrigger("PaneSelect",
+                _headerRoot.transform, 164f, -2f, GearW, HeaderControlH,
+                out _operatorPanelLabel);
+            VanillaSkin.AddHint(_operatorPanelRoot,
+                "qmcentral.tip.operator_panel");
             _operatorPanelButton = PanelUi.ButtonOf(_operatorPanelRoot);
-            PanelUi.BindClick(_operatorPanelRoot, ToggleOperatorPanel);
+            PanelUi.BindClick(_operatorPanelRoot, TogglePaneDropdown);
 
             _closeRoot = PanelUi.CreateButtonRoot("Close", _headerRoot.transform,
                 232f, -2f, 44f, 13f, "qmcentral.tip.close",
@@ -606,6 +658,7 @@ namespace QM_CentralManagement
             PanelUi.BindClick(_closeRoot, ClosePanel);
 
             BuildOperatorDropdown(parent);
+            BuildPaneDropdown(parent);
         }
 
         private void BuildOperatorDropdown(Transform parent)
@@ -845,6 +898,15 @@ namespace QM_CentralManagement
             nextLabel.text = ">";
             PanelUi.BindClick(_nextPageRoot, () => ChangePage(1));
 
+            // Maintenance sits beside destruction: both act on the whole
+            // hold rather than on the page in view, and this is the row the
+            // player already looks at for bulk actions.
+            _repairRoot = PanelUi.CreateButtonRoot("Repair", parent,
+                214f, -183f, RepairW, 17f, "qmcentral.tip.repair",
+                out _, out _repairLabel);
+            _repairButton = PanelUi.ButtonOf(_repairRoot);
+            PanelUi.BindClick(_repairRoot, RequestRepairAll);
+
             _recycleRoot = PanelUi.CreateButtonRoot("Recycle", parent,
                 214f, -183f, 64f, 17f, "qmcentral.tip.recycle",
                 out _, out _recycleLabel);
@@ -861,6 +923,12 @@ namespace QM_CentralManagement
         private void RebuildAndRefresh()
         {
             BuildIndex();
+            // Scanning every storage for damaged gear and pairing it against
+            // every consumable is far too heavy for RefreshLabels, which runs
+            // on each keystroke in the search box. The index rebuild is the
+            // one moment the hold can actually have changed, so the count is
+            // taken here and read from cache everywhere else.
+            _repairableCount = CountRepairableItems();
             ClampRecycleSelection();
             RefreshFiltered();
         }
@@ -924,10 +992,15 @@ namespace QM_CentralManagement
 
         private List<SortMode> GetAvailableSortModes()
         {
+            // TechLevel joins Name and Quantity as a mode every category
+            // offers: it reads straight off ItemRecord, which every indexed
+            // item has, unlike the resist and damage modes that only exist
+            // where the relevant record does.
             var modes = new List<SortMode>
             {
                 SortMode.Name,
-                SortMode.Quantity
+                SortMode.Quantity,
+                SortMode.TechLevel
             };
             if (_category == CargoCategory.Equipment)
             {
@@ -974,6 +1047,9 @@ namespace QM_CentralManagement
                 case SortMode.Quantity:
                     result = b.Units.CompareTo(a.Units);
                     break;
+                case SortMode.TechLevel:
+                    result = GetTechLevel(b).CompareTo(GetTechLevel(a));
+                    break;
                 case SortMode.Set:
                     result = CompareEquipmentSets(a, b);
                     break;
@@ -1000,6 +1076,16 @@ namespace QM_CentralManagement
                     break;
             }
             return result != 0 ? result : CompareNames(a, b);
+        }
+
+        /// <summary>
+        /// Highest tech first, and anything whose ItemRecord could not be
+        /// resolved goes to the very bottom rather than pretending to be
+        /// tech 0 -- an unknown is not the same as primitive.
+        /// </summary>
+        private static int GetTechLevel(CentralInventoryEntry entry)
+        {
+            return entry?.ItemRecord?.TechLevel ?? int.MinValue;
         }
 
         private static int CompareNames(CentralInventoryEntry a,
@@ -1317,12 +1403,12 @@ namespace QM_CentralManagement
                         entry.Units, preferredUnits)
                     : GetCardValueText(entry);
                 card.Quantity.font = Localization.GetActualFont();
-                var selectedUnits = GetSelectedRecycleUnits(entry.Id);
+                var selectedUnits = GetSelectedUnits(entry.Id);
                 var selected = selectedUnits > 0;
                 VanillaSkin.SetSprite(card.Background,
                     selected ? VanillaSkin.SlotSelected : VanillaSkin.SlotNormal,
                     selected ? PanelUi.SelectedColor : PanelUi.CardColor);
-                card.SelectButton.SetInteractable(entry.HasRecyclable);
+                card.SelectButton.SetInteractable(CanSelectEntry(entry));
                 card.SelectLabel.text = selected
                     ? "×" + selectedUnits
                     : Localization.Get("qmcentral.select");
@@ -1435,6 +1521,7 @@ namespace QM_CentralManagement
                 _operatorDropdownButton.SetInteractable(canSwitch);
             RefreshOperatorPanelButton();
             RefreshRecycleButton();
+            RefreshRepairButton();
         }
 
         private void RefreshRecycleButton()
@@ -1451,6 +1538,161 @@ namespace QM_CentralManagement
                 _recycleLabel.text = string.Format(
                     Localization.Get("qmcentral.recycle"), count);
             _recycleLabel.font = Localization.GetActualFont();
+        }
+
+        /// <summary>
+        /// Scoped to the selected agent, so with no agent there is nothing to
+        /// act on and the button says so rather than doing something broader.
+        /// </summary>
+        private void RefreshRepairButton()
+        {
+            if (_repairButton == null || _repairLabel == null)
+                return;
+            var count = _repairableCount;
+            _repairButton.SetInteractable(count > 0);
+            _repairLabel.text = Localization.Get(count == 0
+                ? "qmcentral.repair_none"
+                : "qmcentral.repair");
+            _repairLabel.font = Localization.GetActualFont();
+        }
+
+        private int CountRepairableItems()
+        {
+            try
+            {
+                return CentralRepairService.CountRepairable(_mercenary,
+                    _cargo, _progression);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(Plugin.LogPrefix
+                               + "could not count repairable items: " + e);
+                return 0;
+            }
+        }
+
+        private void RequestRepairAll()
+        {
+            if (UI.Drag.IsDragging)
+                return;
+            // Recounted rather than read from cache: this is a one-shot
+            // user action, and the number shown in the dialog is the one they
+            // are agreeing to.
+            var count = CountRepairableItems();
+            _repairableCount = count;
+            if (count == 0)
+            {
+                RefreshRepairButton();
+                return;
+            }
+            try
+            {
+                // Same dialog the batch recycle uses, and for the same reason:
+                // spending kits and grinding max durability off gear cannot be
+                // undone, so it may not happen on one stray click.
+                UI.Chain<ConfirmDialogWindow>().Invoke(v =>
+                    v.Configure(OnRepairConfirmed,
+                        "qmcentral.repair_dialog",
+                        focusOnApply: false,
+                        arg0: count.ToString("N0",
+                            CultureInfo.InvariantCulture),
+                        applyCaption: "qmcentral.repair_apply",
+                        cancelCaption: "ui.dialog.no_option")).Show();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(Plugin.LogPrefix
+                               + "could not open the repair confirmation: " + e);
+            }
+        }
+
+        private void OnRepairConfirmed(ConfirmDialogWindow.Option option)
+        {
+            if (option != ConfirmDialogWindow.Option.Yes)
+                return;
+            // The dialog is modal but the panel behind it stays live, so the
+            // hold may have changed while it was up.
+            _repairableCount = CountRepairableItems();
+            if (_repairableCount == 0)
+            {
+                RefreshRepairButton();
+                return;
+            }
+            ExecuteRepairAll();
+        }
+
+        private void ExecuteRepairAll()
+        {
+            RepairOutcome outcome;
+            try
+            {
+                outcome = CentralRepairService.RepairAll(_mercenary,
+                    _cargo, _progression, _perkFactory);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(Plugin.LogPrefix + "batch repair failed: " + e);
+                RebuildAndRefresh();
+                return;
+            }
+
+            Debug.Log(Plugin.LogPrefix + "repaired " + outcome.ItemsRepaired
+                      + " item(s) with " + outcome.Applications
+                      + " application(s); " + outcome.Skipped
+                      + " left untouched.");
+            var sounds = SingletonMonoBehaviour<SoundsStorage>.Instance;
+            var controller = SingletonMonoBehaviour<SoundController>.Instance;
+            if (controller != null && sounds != null)
+            {
+                controller.PlayUiSound(outcome.DidSomething
+                    ? sounds.Repair
+                    : sounds.EmptyAttack, isUnique: true);
+            }
+            // The agent pane is a VANILLA inventory view and the condition
+            // bars it draws just changed, so the screen has to repaint before
+            // the panel's own index is rebuilt. Recycling never needed this --
+            // it moves cargo the agent pane does not show.
+            _screen?.RefreshView();
+            RebuildAndRefresh();
+            ShowRepairSummary(outcome);
+        }
+
+        /// <summary>
+        /// What the pass actually spent. The condition bars on the cards show
+        /// the gain, but nothing else would show the cost, and the cost is the
+        /// half the player cannot see coming.
+        /// </summary>
+        private void ShowRepairSummary(RepairOutcome outcome)
+        {
+            if (!outcome.DidSomething || outcome.Consumed.Count == 0)
+                return;
+            try
+            {
+                var lines = new List<ExchangeItemLine>();
+                foreach (var consumed in outcome.Consumed)
+                {
+                    lines.Add(new ExchangeItemLine
+                    {
+                        ItemId = consumed.Key,
+                        Count = consumed.Value.Amount,
+                        // Charges off a multi-use kit are not whole kits, and
+                        // the default "x7" would claim they were.
+                        AmountKey = consumed.Value.Charges
+                            ? "qmcentral.repair_charges"
+                            : null,
+                    });
+                }
+                lines.Sort((a, b) => b.Count.CompareTo(a.Count));
+                _repairSummary?.Show(string.Format(
+                        Localization.Get("qmcentral.repair_summary_title"),
+                        outcome.ItemsRepaired),
+                    lines, "qmcentral.repair_summary_note");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(Plugin.LogPrefix
+                               + "could not show the repair summary: " + e);
+            }
         }
 
         private void SelectCategory(CargoCategory category)
@@ -2013,11 +2255,11 @@ namespace QM_CentralManagement
             for (var i = lo; i <= hi; i++)
             {
                 var entry = _filtered[i];
-                if (entry == null || !entry.HasRecyclable)
+                if (entry == null || !CanSelectEntry(entry))
                     continue;
-                var available = CountRecyclableUnits(entry);
+                var available = SelectableUnits(entry);
                 if (available > 0)
-                    _selectedForRecycle[entry.Id] = available;
+                    Selection[entry.Id] = available;
             }
 
             RefreshCards();
@@ -2031,23 +2273,23 @@ namespace QM_CentralManagement
             var id = _cards[index].ItemId;
             if (string.IsNullOrEmpty(id)
                 || !Index.TryGetValue(id, out var entry)
-                || !entry.HasRecyclable)
+                || !CanSelectEntry(entry))
             {
                 return;
             }
-            var available = CountRecyclableUnits(entry);
+            var available = SelectableUnits(entry);
             if (available <= 0)
                 return;
-            if (GetSelectedRecycleUnits(entry.Id) >= available)
+            if (GetSelectedUnits(entry.Id) >= available)
             {
-                _selectedForRecycle.Remove(entry.Id);
+                Selection.Remove(entry.Id);
                 // Clicking the anchor back off leaves nothing to extend from.
                 if (_selectionAnchorId == entry.Id)
                     _selectionAnchorId = null;
             }
             else
             {
-                _selectedForRecycle[entry.Id] = available;
+                Selection[entry.Id] = available;
                 _selectionAnchorId = entry.Id;
             }
             RefreshCards();
@@ -2061,7 +2303,7 @@ namespace QM_CentralManagement
             var id = _cards[index].ItemId;
             if (string.IsNullOrEmpty(id)
                 || !Index.TryGetValue(id, out var entry)
-                || !entry.HasRecyclable)
+                || !CanSelectEntry(entry))
             {
                 return;
             }
@@ -2079,7 +2321,7 @@ namespace QM_CentralManagement
         {
             if (entry == null)
                 return;
-            var available = CountRecyclableUnits(entry);
+            var available = SelectableUnits(entry);
             if (available <= 0)
                 return;
 
@@ -2105,7 +2347,7 @@ namespace QM_CentralManagement
             _menuEntry = entry;
             _menuAvailable = available;
 
-            var selected = GetSelectedRecycleUnits(entry.Id);
+            var selected = GetSelectedUnits(entry.Id);
 
             // ContextMenuSliderButton disables itself when max == min, so a
             // single-unit stack gets the plain commands only.
@@ -2160,9 +2402,9 @@ namespace QM_CentralManagement
             }
 
             if (units <= 0)
-                _selectedForRecycle.Remove(entry.Id);
+                Selection.Remove(entry.Id);
             else
-                _selectedForRecycle[entry.Id] = units;
+                Selection[entry.Id] = units;
 
             RefreshCards();
             RefreshLabels();
@@ -2202,13 +2444,12 @@ namespace QM_CentralManagement
             var clearCurrent = AreAllFilteredSelected();
             foreach (var entry in _filtered)
             {
-                if (!entry.HasRecyclable)
+                if (!CanSelectEntry(entry))
                     continue;
                 if (clearCurrent)
-                    _selectedForRecycle.Remove(entry.Id);
+                    Selection.Remove(entry.Id);
                 else
-                    _selectedForRecycle[entry.Id] =
-                        CountRecyclableUnits(entry);
+                    Selection[entry.Id] = SelectableUnits(entry);
             }
             _selectionAnchorId = null;
             RefreshCards();
@@ -2220,12 +2461,12 @@ namespace QM_CentralManagement
             var found = false;
             foreach (var entry in _filtered)
             {
-                if (!entry.HasRecyclable)
+                if (!CanSelectEntry(entry))
                     continue;
                 found = true;
-                var available = CountRecyclableUnits(entry);
+                var available = SelectableUnits(entry);
                 if (available <= 0
-                    || GetSelectedRecycleUnits(entry.Id) < available)
+                    || GetSelectedUnits(entry.Id) < available)
                 {
                     return false;
                 }
@@ -2260,7 +2501,7 @@ namespace QM_CentralManagement
 
         private void ClearSelection()
         {
-            _selectedForRecycle.Clear();
+            Selection.Clear();
             _selectionAnchorId = null;
             RefreshCards();
             RefreshLabels();
@@ -2438,12 +2679,24 @@ namespace QM_CentralManagement
             return count;
         }
 
-        private int GetSelectedRecycleUnits(string itemId)
+        private int GetSelectedUnits(string itemId)
         {
             return !string.IsNullOrEmpty(itemId)
                    && _selectedForRecycle.TryGetValue(itemId, out var units)
                 ? units
                 : 0;
+        }
+
+        private Dictionary<string, int> Selection => _selectedForRecycle;
+
+        private static int SelectableUnits(CentralInventoryEntry entry)
+        {
+            return CountRecyclableUnits(entry);
+        }
+
+        private static bool CanSelectEntry(CentralInventoryEntry entry)
+        {
+            return entry != null && entry.HasRecyclable;
         }
 
         private static int CountRecyclableUnits(CentralInventoryEntry entry)
@@ -2551,10 +2804,17 @@ namespace QM_CentralManagement
                            || entry.ItemClass == ItemClass.Backpack
                            || entry.ItemClass == ItemClass.Vest;
                 case CargoCategory.Ammo:
-                    return entry.ItemClass == ItemClass.Ammo
-                           || entry.ItemClass == ItemClass.Grenade
+                    return entry.ItemClass == ItemClass.Ammo;
+                case CargoCategory.Ordnance:
+                    // Everything you put ON the map rather than equip:
+                    // thrown, buried, dropped as a turret, or planted as
+                    // cover (PlaceableObstacle is the armoured shield and the
+                    // energy barrier). Special used to hold the last of those,
+                    // one tab away from the mines they get used with.
+                    return entry.ItemClass == ItemClass.Grenade
                            || entry.ItemClass == ItemClass.Mine
-                           || entry.ItemClass == ItemClass.Turret;
+                           || entry.ItemClass == ItemClass.Turret
+                           || entry.ItemClass == ItemClass.PlaceableObstacle;
                 case CargoCategory.Supplies:
                     return entry.ItemClass == ItemClass.Food
                            || entry.ItemClass == ItemClass.Drink
@@ -2603,7 +2863,8 @@ namespace QM_CentralManagement
         private static readonly CargoCategory[] ClaimingCategories =
         {
             CargoCategory.Weapons, CargoCategory.Equipment,
-            CargoCategory.Ammo, CargoCategory.Supplies,
+            CargoCategory.Ammo, CargoCategory.Ordnance,
+            CargoCategory.Supplies,
             CargoCategory.Augments, CargoCategory.Materials,
             CargoCategory.Barter,
         };
@@ -2676,8 +2937,6 @@ namespace QM_CentralManagement
                     return entry.ItemClass == ItemClass.Backpack;
                 case CargoDetail.Vest:
                     return entry.ItemClass == ItemClass.Vest;
-                case CargoDetail.Ammunition:
-                    return entry.ItemClass == ItemClass.Ammo;
                 case CargoDetail.Grenades:
                     return entry.ItemClass == ItemClass.Grenade;
                 case CargoDetail.Mines:
@@ -2786,10 +3045,11 @@ namespace QM_CentralManagement
                         CargoDetail.Body, CargoDetail.Legs,
                         CargoDetail.Boots, CargoDetail.Backpack,
                         CargoDetail.Vest };
-                case CargoCategory.Ammo:
-                    return new[] { CargoDetail.Any, CargoDetail.Ammunition,
-                        CargoDetail.Grenades, CargoDetail.Mines,
-                        CargoDetail.Turrets };
+                // Ammo holds one item class, so it needs no split of its own.
+                case CargoCategory.Ordnance:
+                    return new[] { CargoDetail.Any, CargoDetail.Grenades,
+                        CargoDetail.Mines, CargoDetail.Turrets,
+                        CargoDetail.Deployables };
                 case CargoCategory.Supplies:
                     return new[] { CargoDetail.Any, CargoDetail.Food,
                         CargoDetail.Drinks, CargoDetail.Medicine,
@@ -2808,8 +3068,7 @@ namespace QM_CentralManagement
                 case CargoCategory.Special:
                     return new[] { CargoDetail.Any, CargoDetail.Quasi,
                         CargoDetail.Quest, CargoDetail.Keys,
-                        CargoDetail.Deployables, CargoDetail.Cyborgs,
-                        CargoDetail.Other };
+                        CargoDetail.Cyborgs, CargoDetail.Other };
                 default:
                     return new[] { CargoDetail.Any };
             }
@@ -2872,31 +3131,9 @@ namespace QM_CentralManagement
             }
         }
 
-        private void ToggleOperatorPanel()
-        {
-            if (UI.Drag.IsDragging)
-                return;
-            CloseAllDropdowns();
-            if (_augmentationMode)
-            {
-                Plugin.OpenCentralArsenal(_mercenary,
-                    showOperatorPanel: true);
-                return;
-            }
-            if (_category == CargoCategory.Augments)
-            {
-                Plugin.OpenCentralAugmentation(_mercenary);
-                return;
-            }
-            var next = !_operatorPanelVisible;
-            if (!Plugin.SetCentralOperatorPanelVisible(_screen, next))
-                next = false;
-            _operatorPanelVisible = next;
-            _scrollRow = 0;
-            ApplyResponsiveLayout();
-            RefreshFiltered();
-            _root?.transform.SetAsLastSibling();
-        }
+        // The old ToggleOperatorPanel lived here. It is SelectPane in
+        // CentralManagementPanel.Shuttle.cs now: one control, four
+        // destinations, each named before it is chosen.
 
         // --- measured layout ------------------------------------------------
         // MeasurePanelLayout writes these from the real design surface; every
@@ -2910,7 +3147,11 @@ namespace QM_CentralManagement
 
         // Header cluster, right to left from the header's own inner edge.
         private const float CloseW = 40f;
-        private const float GearW = 64f;
+        // Wider than the old button: it is a dropdown now, so the caret well
+        // eats 17px and the captions are pane names rather than verbs. Kept
+        // as tight as the longest caption allows -- in the narrow layout the
+        // panel title lives on whatever this cluster leaves behind.
+        private const float GearW = 74f;
         private const float OperatorW = 79f;
         private const float ArrowW = 13f;
         private const float HeaderInset = 2f;
@@ -2932,6 +3173,12 @@ namespace QM_CentralManagement
         private const float SelectW = 62f;
         private const float ClearW = 40f;
         private const float RecycleW = 64f;
+        // Verb only, no count. A count in the caption would widen the
+        // button as the hold changes and shove the whole right-anchored
+        // cluster around -- and at 282 wide the cluster already uses the
+        // entire row, so it has nowhere to be shoved. The number lives in the
+        // confirmation, which is where it has to be read anyway.
+        private const float RepairW = 44f;
         private const float PageArrowWideW = 15f;
         private const float PageArrowNarrowW = 13f;
         private const float PageLabelWideW = 34f;
@@ -2939,6 +3186,9 @@ namespace QM_CentralManagement
         // Below this the "{0} TYPES / {1} UNITS" sentence does not fit and the
         // readout drops to the bare "21 / 4,096" form.
         private const float CountCompactW = 96f;
+        // Below this even "21 / 4,096" is clipped, so the readout is hidden
+        // instead of shown as a fragment.
+        private const float CountMinimumW = 34f;
 
         private void ApplyResponsiveLayout()
         {
@@ -3007,6 +3257,12 @@ namespace QM_CentralManagement
             headerX -= Gap + GearW;
             PanelUi.SetTopLeft((RectTransform)_operatorPanelRoot.transform,
                 headerX, -2f, GearW, HeaderControlH);
+            // The list follows the trigger, but lives on the PANEL root so
+            // SetAsLastSibling can lift it above the card grid -- last child
+            // of the header would still draw underneath it. Hence the header's
+            // own offset folded into these panel-space coordinates.
+            _paneDropdownX = PanelPad + headerX;
+            _paneDropdownY = -PanelPad - 2f - HeaderControlH - 1f;
             headerX -= Gap + OperatorW;
             PanelUi.SetTopLeft((RectTransform)_operatorRoot.transform,
                 headerX, -2f, OperatorW, HeaderControlH);
@@ -3065,17 +3321,17 @@ namespace QM_CentralManagement
         }
 
         /// <summary>
-        /// Nine categories fit one flush row when the panel is wide; the narrow
-        /// layout splits 5 + 4 and stretches BOTH rows edge to edge, so neither
+        /// Ten categories fit one flush row when the panel is wide; the narrow
+        /// layout splits 5 + 5 and stretches BOTH rows edge to edge, so neither
         /// ends in the empty cell the old 5-column grid left behind.
         /// </summary>
         private void LayoutFilterTabs()
         {
             var innerWidth = CurrentInnerWidth;
             var categoryBottom = _operatorPanelVisible
-                ? LayoutTabRows(_categoryTabs, CategoryRowY, new[] { 5, 4 },
+                ? LayoutTabRows(_categoryTabs, CategoryRowY, new[] { 5, 5 },
                     innerWidth)
-                : LayoutTabRows(_categoryTabs, CategoryRowY, new[] { 9 },
+                : LayoutTabRows(_categoryTabs, CategoryRowY, new[] { 10 },
                     innerWidth);
             _detailRowY = categoryBottom - Gap;
             LayoutDetailTabs(GetDetails(_category));
@@ -3167,7 +3423,8 @@ namespace QM_CentralManagement
             var pageArrowW = side ? PageArrowNarrowW : PageArrowWideW;
             var pageLabelW = side ? PageLabelNarrowW : PageLabelWideW;
             var clusterW = SelectW + Gap + ClearW + Gap + pageArrowW + Gap
-                           + pageLabelW + Gap + pageArrowW + Gap + RecycleW;
+                           + pageLabelW + Gap + pageArrowW + Gap + RepairW
+                           + Gap + RecycleW;
             var footerX = Mathf.Floor(
                 CurrentPanelWidth - PanelPad - clusterW);
 
@@ -3178,6 +3435,12 @@ namespace QM_CentralManagement
             // the text drops to a compact form rather than being clipped.
             var countWidth = Mathf.Max(0f, footerX - PanelPad - Gap);
             _countCompact = countWidth < CountCompactW;
+            // Third rung of the same ladder: full sentence, then the bare
+            // "types / units" pair, then nothing at all. In the side-by-side
+            // layout the action cluster now uses the whole row, and an action
+            // the player asked for outranks a readout they can get back by
+            // collapsing the agent pane.
+            _count.gameObject.SetActive(countWidth >= CountMinimumW);
             PanelUi.SetTopLeft(_count.rectTransform, PanelPad, _layoutFooterY,
                 countWidth, RowH);
 
@@ -3197,25 +3460,26 @@ namespace QM_CentralManagement
             PanelUi.SetTopLeft((RectTransform)_nextPageRoot.transform,
                 x, _layoutFooterY, pageArrowW, RowH);
             x += pageArrowW + Gap;
+            PanelUi.SetTopLeft((RectTransform)_repairRoot.transform,
+                x, _layoutFooterY, RepairW, RowH);
+            x += RepairW + Gap;
             PanelUi.SetTopLeft((RectTransform)_recycleRoot.transform,
                 x, _layoutFooterY, RecycleW, RowH);
         }
 
+        /// <summary>
+        /// The pane selector's caption names what is on screen right now; the
+        /// list it opens names where else you can go.
+        /// </summary>
         private void RefreshOperatorPanelButton()
         {
             if (_operatorPanelLabel == null)
                 return;
-            var key = _augmentationMode
-                ? "qmcentral.augment_hide"
-                : _category == CargoCategory.Augments
-                    ? "qmcentral.augment_show"
-                    : _operatorPanelVisible
-                        ? "qmcentral.operator_hide"
-                        : "qmcentral.operator_show";
-            _operatorPanelLabel.text = Localization.Get(key);
+            _operatorPanelLabel.text = PaneLabel(CurrentPane);
             _operatorPanelLabel.font = Localization.GetActualFont();
-            if (_operatorPanelButton != null)
-                _operatorPanelButton.SetInteractable(_mercenary != null);
+            // Always usable: even with no operator the list still offers the
+            // shuttle hold and hiding the pane.
+            _operatorPanelButton?.SetInteractable(true);
         }
 
         private void ApplyFont()
@@ -3253,6 +3517,14 @@ namespace QM_CentralManagement
             if (UI.IsShowing<CommonContextMenu>())
             {
                 UI.Drag.Pause(0.08f);
+                return;
+            }
+            if (IsRepairSummaryOpen)
+            {
+                // Report-only modal: it owns the pointer and any dismiss key
+                // while it is up, and confirms nothing.
+                UI.Drag.Pause(0.08f);
+                _repairSummary.HandleKeys();
                 return;
             }
             if (IsPresetPopupOpen)

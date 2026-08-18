@@ -228,6 +228,9 @@ namespace QM_CentralManagement
 
         private static void SpaceModeFinishedPrefix(SpaceModeFinishedData data)
         {
+            // The raid is launching, so the briefing this session was opened
+            // from is gone for good.
+            _centralOpenedFromRaidPrep = false;
             try
             {
                 RememberDeployedOperator(data?.mercProfileId);
@@ -313,6 +316,10 @@ namespace QM_CentralManagement
                 return;
             try
             {
+                // The spaceship is the other way in, so this is one of the two
+                // moments a session that came from the mission briefing can no
+                // longer be the one on screen. See _centralOpenedFromRaidPrep.
+                _centralOpenedFromRaidPrep = false;
                 var mercenary = GetPreferredCentralOperator();
                 OpenCentralArsenal(mercenary, showOperatorPanel: false);
             }

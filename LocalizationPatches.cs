@@ -20,10 +20,14 @@ namespace QM_CentralManagement
                 ["qmcentral.title"] = "CENTRAL MATERIAL MANAGEMENT",
                 ["qmcentral.search"] = "Search stored item name or internal ID...",
                 ["qmcentral.close"] = "CLOSE",
-                ["qmcentral.operator_show"] = "AGENT GEAR",
-                ["qmcentral.operator_hide"] = "HIDE GEAR",
-                ["qmcentral.augment_show"] = "INSTALL AUGS",
-                ["qmcentral.augment_hide"] = "AGENT GEAR",
+                // Mission briefing action. Deliberately shorter than the panel
+                // title: it shares one row with "START OPERATION".
+                ["qmcentral.caption.raidprep"] = "CENTRAL MANAGEMENT",
+                ["qmcentral.tip.raidprep"] =
+                    "Gear this operator up from central management",
+                // operator_show / operator_hide / augment_show / augment_hide
+                // retired with the header button they labelled; the pane
+                // selector uses qmcentral.pane_* instead.
                 // Per-control guidance. This replaces the old persistent hint
                 // strip: vanilla never draws one, and at 3.4pt it was
                 // unreadable and hidden outright when the agent panel opened.
@@ -111,6 +115,35 @@ namespace QM_CentralManagement
                     "Continue anyway? Missing equipment slots will be left empty and missing carried items are skipped. The body is never changed.",
                 ["qmcentral.preset_ship_apply_failed"] =
                     "Could not apply the loadout. All items already moved remain safely in the ship's cargo.\n{0}",
+                // Shuttle restock manifests (qmcentral.shuttle.*): the same
+                // pre-departure strip while the cargo shuttle tab is open.
+                ["qmcentral.shuttle_title"] = "SHUTTLE",
+                ["qmcentral.shuttle_restock"] = "STOCK",
+                ["qmcentral.shuttle_none"] = "No manifest",
+                ["qmcentral.shuttle_default_name"] = "Manifest {0}",
+                ["qmcentral.shuttle_summary"] = "{0} type(s), {1} unit(s)",
+                ["qmcentral.shuttle_summary_empty"] = "empty",
+                ["qmcentral.shuttle_save_title"] = "SAVE SHUTTLE MANIFEST",
+                ["qmcentral.shuttle_save_body"] =
+                    "Saves what the shuttle hold contains right now ({0} item type(s), {1} unit(s)) as a restock list. A manifest with the same name is overwritten.",
+                ["qmcentral.shuttle_save_empty"] =
+                    "The shuttle hold is empty. Put the supplies you want to keep on board in first, then save.",
+                ["qmcentral.shuttle_delete_title"] = "DELETE MANIFEST",
+                ["qmcentral.shuttle_report_title"] = "SHUTTLE RESTOCK",
+                ["qmcentral.shuttle_missing"] =
+                    "Not enough {0} in storage - {1} short",
+                ["qmcentral.shuttle_no_room"] =
+                    "No room left in the shuttle for {0} - {1} not loaded",
+                ["qmcentral.shuttle_unavailable"] =
+                    "The cargo shuttle hold is unavailable.",
+                // The central panel's left-hand pane selector.
+                ["qmcentral.shuttle_caption"] = "CARGO SHUTTLE",
+                ["qmcentral.pane_equipment"] = "GEAR",
+                ["qmcentral.pane_shuttle"] = "SHUTTLE",
+                ["qmcentral.pane_augmentation"] = "AUGMENTS",
+                ["qmcentral.pane_hidden"] = "HIDE",
+                ["qmcentral.shuttle_error"] =
+                    "Restock failed. Everything is back where it was; see Player.log.",
                 ["qmcentral.sort_button"] = "SORT: {0}",
                 ["qmcentral.slot_button"] = "SLOT: {0}",
                 ["qmcentral.slot_all"] = "ALL",
@@ -118,6 +151,7 @@ namespace QM_CentralManagement
                 ["qmcentral.damage_value"] = "x{0} / DMG {1}",
                 ["qmcentral.sort.name"] = "NAME",
                 ["qmcentral.sort.quantity"] = "QUANTITY",
+                ["qmcentral.sort.techlevel"] = "TECH LEVEL",
                 ["qmcentral.sort.set"] = "ARMOR SET",
                 ["qmcentral.sort.totalresist"] = "TOTAL RESIST",
                 ["qmcentral.sort.blunt"] = "BLUNT RESIST",
@@ -162,10 +196,26 @@ namespace QM_CentralManagement
                 ["qmcentral.recycle_apply"] = "RECYCLE",
                 ["qmcentral.recycle_busy"] = "BUSY",
                 ["qmcentral.recycle_none"] = "NONE",
+                // Repairs the SELECTED AGENT's gear out of ship storage.
+                // The dialog spells out the cost, because scrap parts
+                // trade permanent max durability for condition and
+                // nothing else on screen says so.
+                ["qmcentral.repair"] = "REPAIR",
+                ["qmcentral.repair_none"] = "NONE",
+                ["qmcentral.repair_dialog"] =
+                    "Repair {0} damaged item(s) on this agent? Supplies come from ship storage.",
+                ["qmcentral.repair_apply"] = "REPAIR",
+                ["qmcentral.repair_summary_title"] = "REPAIRED {0} ITEM(S)",
+                ["qmcentral.repair_summary_note"] = "Spent from ship storage. Kits are always used before scrap parts.",
+                // Repair kits hold five charges; the receipt counts charges
+                // for them and whole items for single-use scrap parts.
+                ["qmcentral.repair_charges"] = "{0} uses",
+                ["qmcentral.tip.repair"] = "Repair this agent's damaged gear from ship storage",
                 ["qmcentral.category.all"] = "ALL",
                 ["qmcentral.category.weapons"] = "WEAPONS",
                 ["qmcentral.category.equipment"] = "EQUIPMENT",
                 ["qmcentral.category.ammo"] = "AMMO",
+                ["qmcentral.category.ordnance"] = "ORDNANCE",
                 ["qmcentral.category.supplies"] = "SUPPLIES",
                 ["qmcentral.category.augments"] = "AUGMENTS",
                 ["qmcentral.category.materials"] = "MATERIALS",
@@ -185,7 +235,6 @@ namespace QM_CentralManagement
                 ["qmcentral.detail.boots"] = "BOOTS",
                 ["qmcentral.detail.backpack"] = "PACKS",
                 ["qmcentral.detail.vest"] = "VESTS",
-                ["qmcentral.detail.ammunition"] = "AMMO",
                 ["qmcentral.detail.grenades"] = "GRENADES",
                 ["qmcentral.detail.mines"] = "MINES",
                 ["qmcentral.detail.turrets"] = "TURRETS",
@@ -208,7 +257,7 @@ namespace QM_CentralManagement
                 ["qmcentral.detail.valuable"] = "VALUABLE",
                 ["qmcentral.detail.quest"] = "QUEST",
                 ["qmcentral.detail.keys"] = "KEYS",
-                ["qmcentral.detail.deployables"] = "DEVICES",
+                ["qmcentral.detail.deployables"] = "COVER",
                 ["qmcentral.detail.cyborgs"] = "CYBORGS",
                 ["qmcentral.detail.other"] = "OTHER",
                 // Station trade panel (qmtrade).
@@ -248,6 +297,7 @@ namespace QM_CentralManagement
                 ["qmtrade.cat.weapons"] = "WEAPONS",
                 ["qmtrade.cat.armor"] = "ARMOR",
                 ["qmtrade.cat.ammo"] = "AMMO",
+                ["qmtrade.cat.ordnance"] = "ORDNANCE",
                 ["qmtrade.cat.medical"] = "MEDICAL",
                 ["qmtrade.cat.food"] = "FOOD",
                 ["qmtrade.cat.materials"] = "MATERIALS",
@@ -296,9 +346,24 @@ namespace QM_CentralManagement
                 ["qmcentral.mcm.debugTradeLayout"] = "Debug trade layout",
                 ["qmcentral.mcm.debugTradeLayout.tip"] =
                     "Dump the vanilla trade screen hierarchy into Player.log (diagnostics).",
+                ["qmcentral.mcm.raidPrepCentral"] = "Briefing shortcut",
+                ["qmcentral.mcm.raidPrepCentral.tip"] =
+                    "Add a central management button to the mission briefing, so the chosen operator can be geared up without leaving mission preparation.",
+                ["qmcentral.mcm.shuttleManifests"] = "Shuttle manifests",
+                ["qmcentral.mcm.shuttleManifests.tip"] =
+                    "On the pre-departure screen's cargo shuttle tab, save what the shuttle holds as a named list and refill it from ship storage in one click.",
+                ["qmcentral.mcm.shuttleAutoRestock"] = "Auto-stock the shuttle",
+                ["qmcentral.mcm.shuttleAutoRestock.tip"] =
+                    "Fill the shuttle from the selected manifest as the raid launches, without opening the equipment screen. Only ever adds what is missing.",
                 // Barter exchange summary (AnCom data chip delivery etc.).
                 ["qmtrade.exchange_title"] =
                     "EXCHANGE - THE STATION HANDED OVER",
+                ["qmtrade.exchange_note"] =
+                    "Already stored in the ship's cargo.",
+                ["qmtrade.exchange_amount"] = "x{0}",
+                ["qmtrade.exchange_more"] = "+{0} more",
+                // Only reached if the panel itself failed to build and the
+                // payout has to fall back to the game's plain-text alert.
                 ["qmtrade.exchange_item"] = "{0} x{1}"
             };
 
@@ -310,10 +375,10 @@ namespace QM_CentralManagement
                 ["qmcentral.title"] = "中央物资管理",
                 ["qmcentral.search"] = "搜索库存物品名称或内部 ID……",
                 ["qmcentral.close"] = "关闭",
-                ["qmcentral.operator_show"] = "特工装备",
-                ["qmcentral.operator_hide"] = "收起装备",
-                ["qmcentral.augment_show"] = "安装义体",
-                ["qmcentral.augment_hide"] = "特工装备",
+                // 任务简报界面的入口按钮，和「开始行动」同一行，标题要短。
+                ["qmcentral.caption.raidprep"] = "中央物资管理",
+                ["qmcentral.tip.raidprep"] = "用中央物资管理为该特工配装",
+                // 原来那个标题栏按钮的四个标签已随按钮一起退役，改用 pane_*。
                 // 逐控件引导，取代原来那条常驻提示行。
                 ["qmcentral.tip.previous_operator"] = "上一位特工",
                 ["qmcentral.tip.next_operator"] = "下一位特工",
@@ -398,6 +463,32 @@ namespace QM_CentralManagement
                     "仍要继续吗？缺少的装备栏位会留空，缺少的随身物品会跳过。身体部位不会被改动。",
                 ["qmcentral.preset_ship_apply_failed"] =
                     "应用失败；已经移动的物品都安全留在飞船货舱中。\n{0}",
+                // 穿梭机补给清单：同一条工具条，在「货运穿梭机」页签下的形态。
+                ["qmcentral.shuttle_title"] = "穿梭机",
+                ["qmcentral.shuttle_restock"] = "装填",
+                ["qmcentral.shuttle_none"] = "未选清单",
+                ["qmcentral.shuttle_default_name"] = "补给清单 {0}",
+                ["qmcentral.shuttle_summary"] = "{0} 种，共 {1} 个",
+                ["qmcentral.shuttle_summary_empty"] = "空",
+                ["qmcentral.shuttle_save_title"] = "保存穿梭机清单",
+                ["qmcentral.shuttle_save_body"] =
+                    "把穿梭机货舱当前的内容（{0} 种物品，共 {1} 个）保存为补给清单。同名清单会被覆盖。",
+                ["qmcentral.shuttle_save_empty"] =
+                    "穿梭机货舱是空的。先把要常备的物资放进去，再保存清单。",
+                ["qmcentral.shuttle_delete_title"] = "删除清单",
+                ["qmcentral.shuttle_report_title"] = "穿梭机装填",
+                ["qmcentral.shuttle_missing"] = "库存不足：{0}，还差 {1} 个",
+                ["qmcentral.shuttle_no_room"] =
+                    "穿梭机放不下了：{0}，还有 {1} 个没装",
+                ["qmcentral.shuttle_unavailable"] = "穿梭机货舱不可用。",
+                // 中央管理面板左侧面板的选择器。
+                ["qmcentral.shuttle_caption"] = "货运穿梭机",
+                ["qmcentral.pane_equipment"] = "特工装备",
+                ["qmcentral.pane_shuttle"] = "穿梭机",
+                ["qmcentral.pane_augmentation"] = "安装义体",
+                ["qmcentral.pane_hidden"] = "收起",
+                ["qmcentral.shuttle_error"] =
+                    "装填失败，物品已全部还原；详见 Player.log。",
                 ["qmcentral.sort_button"] = "排序：{0}",
                 ["qmcentral.slot_button"] = "部位：{0}",
                 ["qmcentral.slot_all"] = "全部",
@@ -405,6 +496,7 @@ namespace QM_CentralManagement
                 ["qmcentral.damage_value"] = "×{0} / 伤 {1}",
                 ["qmcentral.sort.name"] = "名称",
                 ["qmcentral.sort.quantity"] = "数量",
+                ["qmcentral.sort.techlevel"] = "科技等级",
                 ["qmcentral.sort.set"] = "套装",
                 ["qmcentral.sort.totalresist"] = "总抗性",
                 ["qmcentral.sort.blunt"] = "钝击抗性",
@@ -448,10 +540,23 @@ namespace QM_CentralManagement
                 ["qmcentral.recycle_apply"] = "回收",
                 ["qmcentral.recycle_busy"] = "回收中",
                 ["qmcentral.recycle_none"] = "未选择",
+                // 维修「当前选中特工身上」的装备，耗材从飞船库存出。
+                // 对话框要写清代价：零件类耗材是拿永久耐久上限换当前耐久。
+                ["qmcentral.repair"] = "维修",
+                ["qmcentral.repair_none"] = "无需维修",
+                ["qmcentral.repair_dialog"] =
+                    "维修该特工的 {0} 件受损装备？将消耗飞船库存物资。",
+                ["qmcentral.repair_apply"] = "维修",
+                ["qmcentral.repair_summary_title"] = "已维修 {0} 件物品",
+                ["qmcentral.repair_summary_note"] = "已从飞船库存消耗；总是优先用维修包，其次才是零件。",
+                // 维修包有 5 次充能，结算按“次”计；一次性零件按“个”计。
+                ["qmcentral.repair_charges"] = "{0} 次",
+                ["qmcentral.tip.repair"] = "用飞船库存维修该特工身上的受损装备",
                 ["qmcentral.category.all"] = "全部",
                 ["qmcentral.category.weapons"] = "武器",
                 ["qmcentral.category.equipment"] = "装备",
                 ["qmcentral.category.ammo"] = "弹药",
+                ["qmcentral.category.ordnance"] = "投掷部署",
                 ["qmcentral.category.supplies"] = "补给",
                 ["qmcentral.category.augments"] = "植入体",
                 ["qmcentral.category.materials"] = "材料",
@@ -471,7 +576,6 @@ namespace QM_CentralManagement
                 ["qmcentral.detail.boots"] = "靴子",
                 ["qmcentral.detail.backpack"] = "背包",
                 ["qmcentral.detail.vest"] = "背心",
-                ["qmcentral.detail.ammunition"] = "弹药",
                 ["qmcentral.detail.grenades"] = "手雷",
                 ["qmcentral.detail.mines"] = "地雷",
                 ["qmcentral.detail.turrets"] = "炮塔",
@@ -494,7 +598,7 @@ namespace QM_CentralManagement
                 ["qmcentral.detail.valuable"] = "贵重",
                 ["qmcentral.detail.quest"] = "任务",
                 ["qmcentral.detail.keys"] = "钥匙",
-                ["qmcentral.detail.deployables"] = "装置",
+                ["qmcentral.detail.deployables"] = "掩体",
                 ["qmcentral.detail.cyborgs"] = "生化人",
                 ["qmcentral.detail.other"] = "其他",
                 // 空间站贸易面板（qmtrade）。
@@ -531,6 +635,7 @@ namespace QM_CentralManagement
                 ["qmtrade.cat.weapons"] = "武器",
                 ["qmtrade.cat.armor"] = "防具",
                 ["qmtrade.cat.ammo"] = "弹药",
+                ["qmtrade.cat.ordnance"] = "投掷部署",
                 ["qmtrade.cat.medical"] = "医疗",
                 ["qmtrade.cat.food"] = "食物",
                 ["qmtrade.cat.materials"] = "材料",
@@ -572,8 +677,21 @@ namespace QM_CentralManagement
                 ["qmcentral.mcm.debugTradeLayout"] = "调试：输出交易界面布局",
                 ["qmcentral.mcm.debugTradeLayout.tip"] =
                     "把原版交易界面层级信息写入 Player.log（诊断用）。",
+                ["qmcentral.mcm.raidPrepCentral"] = "简报界面入口",
+                ["qmcentral.mcm.raidPrepCentral.tip"] =
+                    "在任务简报界面加一个中央物资管理按钮，不用退出任务准备就能给选定特工配装。",
+                ["qmcentral.mcm.shuttleManifests"] = "穿梭机补给清单",
+                ["qmcentral.mcm.shuttleAutoRestock"] = "自动装填穿梭机",
+                ["qmcentral.mcm.shuttleManifests.tip"] =
+                    "在出战准备界面的「货运穿梭机」页签上，把穿梭机货舱的内容存成具名清单，之后一键从飞船库存补满。",
+                ["qmcentral.mcm.shuttleAutoRestock.tip"] =
+                    "出战瞬间按所选清单自动装满穿梭机，不用打开装备界面；只补缺口，不会拿走任何东西。",
                 // 以物换物结算提示（如交付安共数据芯片等）。
                 ["qmtrade.exchange_title"] = "以物换物——空间站交付了以下物品",
+                ["qmtrade.exchange_note"] = "以上物品已存入飞船货舱。",
+                ["qmtrade.exchange_amount"] = "×{0}",
+                ["qmtrade.exchange_more"] = "另有 {0} 项",
+                // 仅在面板构建失败、退回原版文字弹窗时才会用到。
                 ["qmtrade.exchange_item"] = "{0} ×{1}"
             };
 
