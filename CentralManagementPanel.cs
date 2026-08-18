@@ -1489,19 +1489,8 @@ namespace QM_CentralManagement
             }
             // Page numbers again: the wheel and the arrows both move a whole
             // screen, so a screen IS a page.
-            var rows = Mathf.Max(1, _cardRows);
-            var totalPages = Mathf.Max(1, Mathf.CeilToInt(TotalRows / (float)rows));
-            // The LAST stop is bottom-aligned, not page-aligned: MaxScrollRow
-            // is TotalRows - rows, so over a 7-row grid holding 20 rows the
-            // stops are 0, 7, 13 -- and 13/7+1 reads "page 2" while the grid
-            // is already showing the final screen. Every other stop is an
-            // exact multiple of rows (both the wheel and the arrows move a
-            // whole screen), so anchoring the bottom is the whole fix.
-            var page = _scrollRow >= MaxScrollRow
-                ? totalPages
-                : Mathf.Clamp(_scrollRow / rows + 1, 1, totalPages);
             _page.text = string.Format(Localization.Get("qmcentral.page"),
-                page, totalPages);
+                CurrentPage, TotalPages);
             _page.font = Localization.GetActualFont();
             var units = 0;
             foreach (var entry in _filtered)
@@ -2761,22 +2750,52 @@ namespace QM_CentralManagement
         /// <summary>Highest first-visible-row that still fills the grid.</summary>
         private int MaxScrollRow => Mathf.Max(0, TotalRows - _cardRows);
 
-        private void ScrollRows(int rows)
-        {
-            if (rows == 0)
-                return;
-            var next = Mathf.Clamp(_scrollRow + rows, 0, MaxScrollRow);
-            if (next == _scrollRow)
-                return;
-            _scrollRow = next;
-            RefreshCards();
-            RefreshLabels();
-        }
+        private int RowsPerPage => Mathf.Max(1, _cardRows);
 
-        /// <summary>The arrow buttons still move a whole screen at a time.</summary>
+        private int TotalPages =>
+            Mathf.Max(1, Mathf.CeilToInt(TotalRows / (float)RowsPerPage));
+
+        /// <summary>
+        /// Which page the grid is showing, 1-based.
+        ///
+        /// Derived from the LAST visible row rather than the first, because
+        /// the final page is bottom-aligned: MaxScrollRow is
+        /// TotalRows - _cardRows so the grid stays full, which leaves
+        /// _scrollRow one short of a page boundary. Over a 7-row grid holding
+        /// 20 rows the stops are 0, 7, 13, and dividing the FIRST row by 7
+        /// calls that last screen "page 2".
+        /// </summary>
+        private int CurrentPage => Mathf.Clamp(
+            Mathf.CeilToInt((_scrollRow + RowsPerPage) / (float)RowsPerPage),
+            1, TotalPages);
+
+        /// <summary>
+        /// Paging is driven by the page INDEX, never by adding rows to the
+        /// current offset.
+        ///
+        /// Adding rows desynchronised the two directions as soon as the
+        /// bottom-aligned last stop was reached: from 13 a backward step
+        /// landed on 6 rather than 7, so the way back read 3, 1, 1 instead of
+        /// 3, 2, 1 and never returned to the framing the way down had shown.
+        /// Every position is now a function of the page number alone.
+        /// </summary>
         private void ChangePage(int direction)
         {
-            ScrollRows(direction * Mathf.Max(1, _cardRows));
+            GoToPage(CurrentPage + direction);
+        }
+
+        private void GoToPage(int page)
+        {
+            // Min, not a page-aligned multiple: the last page still bottom
+            // aligns so the grid stays full, and CurrentPage reads that back.
+            var target = Mathf.Min(
+                (Mathf.Clamp(page, 1, TotalPages) - 1) * RowsPerPage,
+                MaxScrollRow);
+            if (target == _scrollRow)
+                return;
+            _scrollRow = target;
+            RefreshCards();
+            RefreshLabels();
         }
 
         private bool MatchesCategory(CentralInventoryEntry entry)
@@ -3573,10 +3592,9 @@ namespace QM_CentralManagement
             {
                 return;
             }
-            // One notch moves a full screen, same as the arrow buttons. Fine
+            // One notch moves a full page, same as the arrow buttons. Fine
             // row-by-row scrolling just made the grid feel loose to read.
-            var rows = Mathf.Max(1, _cardRows);
-            ScrollRows(scroll < 0f ? rows : -rows);
+            ChangePage(scroll < 0f ? 1 : -1);
         }
 
         private void OnDestroy()
