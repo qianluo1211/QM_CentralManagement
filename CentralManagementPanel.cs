@@ -1491,7 +1491,15 @@ namespace QM_CentralManagement
             // screen, so a screen IS a page.
             var rows = Mathf.Max(1, _cardRows);
             var totalPages = Mathf.Max(1, Mathf.CeilToInt(TotalRows / (float)rows));
-            var page = Mathf.Clamp(_scrollRow / rows + 1, 1, totalPages);
+            // The LAST stop is bottom-aligned, not page-aligned: MaxScrollRow
+            // is TotalRows - rows, so over a 7-row grid holding 20 rows the
+            // stops are 0, 7, 13 -- and 13/7+1 reads "page 2" while the grid
+            // is already showing the final screen. Every other stop is an
+            // exact multiple of rows (both the wheel and the arrows move a
+            // whole screen), so anchoring the bottom is the whole fix.
+            var page = _scrollRow >= MaxScrollRow
+                ? totalPages
+                : Mathf.Clamp(_scrollRow / rows + 1, 1, totalPages);
             _page.text = string.Format(Localization.Get("qmcentral.page"),
                 page, totalPages);
             _page.font = Localization.GetActualFont();

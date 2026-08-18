@@ -62,6 +62,7 @@
 [h2]Fixes[/h2]
 [list]
 [*]Clicking a mod popup's own dead space no longer dismisses it. While naming a preset that click deselected the text field and closed the whole dialog, taking the typed name with it.
+[*]Fixed the central panel's page counter reading one page short on the [b]last[/b] page -- three pages of results showed "2 / 3" on the third screen. The wheel and the arrows both move a whole screen, but the final stop is bottom-aligned rather than page-aligned, and the counter did not account for that. Present since paging became continuous scrolling in 1.4.0.
 [/list]
 
 [h2]New config options[/h2]

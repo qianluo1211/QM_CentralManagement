@@ -68,6 +68,9 @@ Available in **every** category, alongside name and quantity.
   now means ammunition only, and the central and trade panels agree on
   categories.
 - Fixed: clicking a mod popup's own dead space no longer dismisses it.
+- Fixed: the page counter read one page short on the last page (three pages of
+  results showed "2 / 3" on the third screen). Paging moves a whole screen, but
+  the final stop is bottom-aligned rather than page-aligned.
 
 ## New config options
 
