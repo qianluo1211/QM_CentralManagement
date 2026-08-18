@@ -6,6 +6,11 @@
 装备预设开局即可用：出发前装备界面上方就是预设栏，保存 / 切换 / 一键应用（含义体与机械臂）无需任何科技。研发“供应”科技树中的大型科技“中央物资管理”后，再解锁全舰统一索引、特工配装、义体安装与批量回收的中央终端。
 [/quote]
 
+[h2]GOG 等非 Steam 版本[/h2]
+非 Steam 版的 Quasimorph 装不了创意工坊 mod，所以每个版本都会同步发布到 GitHub：
+[url=https://github.com/qianluo1211/QM_CentralManagement/releases/latest]github.com/qianluo1211/QM_CentralManagement/releases[/url]
+下载 zip 解压，把得到的 [b]QM_CentralManagement[/b] 文件夹整个放进 [code]%USERPROFILE%\AppData\LocalLow\Magnum Scriptum Ltd\Quasimorph\LocalUserPresets\[/code]（没有 [b]LocalUserPresets[/b] 就自己新建）。mod 目录不在游戏安装目录里，所以无论从哪买的游戏路径都一样。注意工坊版和手动版不要同时存在，否则会重复加载。
+
 [h2]快速使用[/h2]
 [olist]
 [*]开局即可用：出发前装备界面上方的装备预设栏可直接保存、切换与一键应用，无需任何科技。

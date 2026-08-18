@@ -6,6 +6,11 @@
 Loadout presets are available from the very start: the preset bar above the agent equipment screen saves, switches, and applies full loadouts (augments and mechanical limbs included) with no technology required. Research the major Central Logistics Matrix technology in Supply to additionally unlock the central terminal: ship-wide indexing, agent loadout management, augmentation installation, and batch recycling in one workflow. Since 1.5.0 the technology also replaces the station trade screen with a central-management-style bulk market.
 [/quote]
 
+[h2]GOG and other non-Steam players[/h2]
+Quasimorph cannot install Workshop mods outside Steam, so every release is also published on GitHub:
+[url=https://github.com/qianluo1211/QM_CentralManagement/releases/latest]github.com/qianluo1211/QM_CentralManagement/releases[/url]
+Download the zip, extract it, and move the resulting [b]QM_CentralManagement[/b] folder into [code]%USERPROFILE%\AppData\LocalLow\Magnum Scriptum Ltd\Quasimorph\LocalUserPresets\[/code] (create [b]LocalUserPresets[/b] if it is not there). The mod folder lives outside the game directory, so that path is the same no matter where you bought the game. Do not keep a manual copy and the Workshop version at once -- the game scans both and would load the mod twice.
+
 [h2]Quick Start[/h2]
 [olist]
 [*]Available immediately: save, switch, and apply loadouts from the bar above the agent equipment screen on the pre-departure screen—no technology required.
