@@ -425,6 +425,50 @@ namespace QM_CentralManagement
         }
 
         /// <summary>
+        /// Lifts a dropdown that lives inside a short clipped bar onto a
+        /// higher overlay (the screen root or the panel's own parent) so the
+        /// list is not buried under the inventory window. worldPositionStays
+        /// keeps the top-left where the trigger opened it.
+        /// </summary>
+        internal static void RaiseDropdown(GameObject dropdown,
+            Transform overlay, ref Transform originalParent)
+        {
+            if (dropdown == null || overlay == null
+                || originalParent != null)
+            {
+                return;
+            }
+            originalParent = dropdown.transform.parent;
+            dropdown.transform.SetParent(overlay, worldPositionStays: true);
+            dropdown.transform.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// Puts a raised dropdown back on the bar. The caller then restores
+        /// the compact local rect; this only undoes the reparent.
+        /// </summary>
+        internal static void LowerDropdown(GameObject dropdown,
+            ref Transform originalParent)
+        {
+            if (dropdown == null || originalParent == null)
+                return;
+            dropdown.transform.SetParent(originalParent,
+                worldPositionStays: false);
+            originalParent = null;
+        }
+
+        /// <summary>
+        /// Visible height of a dropdown: every row when there are few, a
+        /// capped window when there are many (the content then scrolls).
+        /// </summary>
+        internal static float DropdownListHeight(int count, float rowHeight,
+            int maxVisible)
+        {
+            var visible = Mathf.Clamp(count, 1, maxVisible);
+            return visible * rowHeight + 4f;
+        }
+
+        /// <summary>
         /// Destroys pooled dropdown option rows. Deactivating first matters:
         /// Destroy only takes effect at the end of the frame, so without it a
         /// rebuilt list briefly draws the old rows underneath the new ones.

@@ -76,4 +76,4 @@ quantityCtrlShiftStep=1000[/code]
 
 将 [code]shortcutKey[/code] 设为 [code]None[/code] 可关闭飞船快捷键；其他 Unity KeyCode 名称也可使用。修改后建议完全重启游戏。已订阅 Mod Configuration Menu 时，[code]raidPrepCentral[/code]、[code]stationTrade[/code]、[code]tradeConfirm[/code]、[code]autoUnlockTech[/code]、[code]shuttleManifests[/code]、[code]shuttleAutoRestock[/code] 也可直接在游戏内的 Mod 设置页面修改。
 
-[b]版本：1.6.0[/b]
+[b]版本：1.6.1[/b]

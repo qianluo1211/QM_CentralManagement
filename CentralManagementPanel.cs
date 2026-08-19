@@ -347,7 +347,7 @@ namespace QM_CentralManagement
             CloseDropdown(_operatorDropdownRoot);
             CloseDropdown(_sortDropdownRoot);
             CloseDropdown(_slotFilterDropdownRoot);
-            CloseDropdown(_presetDropdownRoot);
+            ClosePresetDropdown();
             CloseDropdown(_paneDropdownRoot);
         }
 

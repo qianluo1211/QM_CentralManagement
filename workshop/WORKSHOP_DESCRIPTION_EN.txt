@@ -75,4 +75,4 @@ quantityCtrlShiftStep=1000[/code]
 
 [code]shortcutKey=None[/code] disables the spaceship shortcut. Restart the game after editing the file. With MCM subscribed, the main flags can also be changed in-game.
 
-[b]Version: 1.6.0[/b]
+[b]Version: 1.6.1[/b]

@@ -1,4 +1,4 @@
-# QM Central Management (1.6.0)
+# QM Central Management (1.6.1)
 
 QM Central Management turns the Magnum's separate storage bays into one searchable logistics terminal. It adds a major Supply technology, a dedicated spaceship action, direct agent loadout management, vanilla augmentation installation, contextual sorting, precise stack handling, protected batch recycling — and since 1.5.0, a central-management-style station trade panel plus optional in-game settings via Crynano's Mod Configuration Menu.
 

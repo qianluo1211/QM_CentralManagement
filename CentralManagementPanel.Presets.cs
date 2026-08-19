@@ -17,6 +17,9 @@ namespace QM_CentralManagement
     {
         private GameObject _presetBarRoot;
         private GameObject _presetDropdownRoot;
+        private RectTransform _presetDropdownContent;
+        private Transform _presetDropdownOverlay;
+        private Transform _presetDropdownOriginalParent;
         private readonly List<GameObject> _presetDropdownRows =
             new List<GameObject>();
         private TextMeshProUGUI _presetTitle;
@@ -125,13 +128,14 @@ namespace QM_CentralManagement
             _presetDeleteButton = PanelUi.ButtonOf(deleteRoot);
             PanelUi.BindClick(deleteRoot, OnPresetDeleteClicked);
 
-            // Parented to the bar and anchored just under the trigger, so
-            // it opens where the control is instead of at a fixed offset from
-            // the panel centre -- which is what made it cover the summary line.
-            _presetDropdownRoot = PanelUi.CreateUiObject("PresetDropdown",
-                rect);
-            PanelUi.SetTopLeft((RectTransform)_presetDropdownRoot.transform,
-                72f, -17f, 220f, 20f);
+            // Built on the bar so it opens under the trigger. Opened lists
+            // are raised to the overlay: the bar is only 46 tall and sits
+            // behind the inventory window, so a child list could only show
+            // the two newest rows.
+            _presetDropdownOverlay = overlayParent;
+            _presetDropdownRoot = PanelUi.CreateScrollArea("PresetDropdown",
+                rect, 72f, -17f, 220f, 20f, out _,
+                out _presetDropdownContent);
             VanillaSkin.Slice(_presetDropdownRoot, VanillaSkin.ListBackground,
                 PanelUi.PanelColor).raycastTarget = true;
             _presetDropdownRoot.SetActive(false);
@@ -152,7 +156,7 @@ namespace QM_CentralManagement
             _presetBarRoot.SetActive(visible);
             if (!visible)
             {
-                CloseDropdown(_presetDropdownRoot);
+                ClosePresetDropdown();
                 ClosePresetPopup();
                 return;
             }
@@ -161,19 +165,24 @@ namespace QM_CentralManagement
             rect.anchoredPosition = new Vector2(157f, 122f);
             _presetBarRoot.transform.SetSiblingIndex(0);
             _root?.transform.SetAsLastSibling();
+            if (_presetDropdownRoot != null
+                && _presetDropdownRoot.activeInHierarchy)
+            {
+                _presetDropdownRoot.transform.SetAsLastSibling();
+            }
         }
 
         private void HidePresetUi()
         {
             if (_presetBarRoot != null)
                 _presetBarRoot.SetActive(false);
-            if (_presetDropdownRoot != null)
-                _presetDropdownRoot.SetActive(false);
+            ClosePresetDropdown();
             _presetPopup?.Hide();
         }
 
         private void DiscardPresetUi()
         {
+            ClosePresetDropdown();
             if (_presetBarRoot != null)
                 Destroy(_presetBarRoot);
             if (_presetDropdownRoot != null)
@@ -182,6 +191,9 @@ namespace QM_CentralManagement
             _presetPopup = null;
             _presetBarRoot = null;
             _presetDropdownRoot = null;
+            _presetDropdownContent = null;
+            _presetDropdownOverlay = null;
+            _presetDropdownOriginalParent = null;
             _presetTitle = null;
             _presetSelectedLabel = null;
             _presetSummary = null;
@@ -287,13 +299,33 @@ namespace QM_CentralManagement
                 return;
             if (_presetDropdownRoot.activeSelf)
             {
-                CloseDropdown(_presetDropdownRoot);
+                ClosePresetDropdown();
                 return;
             }
             CloseAllDropdowns();
             RebuildPresetDropdown();
+            PanelUi.RaiseDropdown(_presetDropdownRoot,
+                _presetDropdownOverlay != null
+                    ? _presetDropdownOverlay
+                    : UI.ScreenRoot,
+                ref _presetDropdownOriginalParent);
             _presetDropdownRoot.SetActive(true);
             _presetDropdownRoot.transform.SetAsLastSibling();
+        }
+
+        private void ClosePresetDropdown()
+        {
+            if (_presetDropdownRoot == null)
+                return;
+            var wasVisible = _presetDropdownRoot.activeInHierarchy;
+            _presetDropdownRoot.SetActive(false);
+            PanelUi.LowerDropdown(_presetDropdownRoot,
+                ref _presetDropdownOriginalParent);
+            PanelUi.SetTopLeft(
+                (RectTransform)_presetDropdownRoot.transform,
+                72f, -17f, 220f, 20f);
+            if (wasVisible)
+                ModInputGate.ConsumePointerRelease();
         }
 
         /// <summary>One option of the selector, mode-independent.</summary>
@@ -346,15 +378,25 @@ namespace QM_CentralManagement
             PanelUi.ClearDropdownRows(_presetDropdownRows);
             const float width = 220f;
             const float rowHeight = 17f;
-            var height = Mathf.Max(rowHeight + 4f,
-                options.Count * rowHeight + 4f);
+            const int maxVisible = 8;
+            var height = PanelUi.DropdownListHeight(options.Count, rowHeight,
+                maxVisible);
             PanelUi.SetTopLeft((RectTransform)_presetDropdownRoot.transform,
                 72f, -17f, width, height);
+            if (_presetDropdownContent != null)
+            {
+                _presetDropdownContent.sizeDelta = new Vector2(width - 2f,
+                    Mathf.Max(height - 2f,
+                        options.Count * rowHeight + 2f));
+                _presetDropdownContent.anchoredPosition = Vector2.zero;
+            }
+            var rowParent = (Transform)_presetDropdownContent
+                            ?? _presetDropdownRoot.transform;
             for (var i = 0; i < options.Count; i++)
             {
                 var option = options[i];
                 var row = PanelUi.CreateButtonRoot("Option" + i,
-                    _presetDropdownRoot.transform, 2f,
+                    rowParent, 2f,
                     -2f - i * rowHeight, width - 4f, rowHeight - 1f,
                     out var background, out var label);
                 label.text = option.Label;
@@ -366,7 +408,7 @@ namespace QM_CentralManagement
                 PanelUi.BindClick(row, () =>
                 {
                     onSelect(option.Id);
-                    CloseDropdown(_presetDropdownRoot);
+                    ClosePresetDropdown();
                     RefreshPresetBar();
                 });
                 _presetDropdownRows.Add(row);

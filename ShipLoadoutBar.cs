@@ -81,6 +81,7 @@ namespace QM_CentralManagement
         private TextMeshProUGUI _deleteLabel;
         private CommonButton _deleteButton;
         private GameObject _dropdownRoot;
+        private RectTransform _dropdownContent;
         private readonly List<GameObject> _dropdownRows =
             new List<GameObject>();
         private LoadoutPresetPopup _popup;
@@ -314,9 +315,9 @@ namespace QM_CentralManagement
                 _deleteButton = PanelUi.ButtonOf(_deleteRoot);
                 PanelUi.BindClick(_deleteRoot, OnDeleteClicked);
 
-                _dropdownRoot = PanelUi.CreateUiObject("PresetDropdown", rect);
-                var dropdownRect = (RectTransform)_dropdownRoot.transform;
-                PanelUi.SetTopLeft(dropdownRect, SelectedLeft, -21f, 200f, 21f);
+                _dropdownRoot = PanelUi.CreateScrollArea("PresetDropdown",
+                    rect, SelectedLeft, -21f, 200f, 21f, out _,
+                    out _dropdownContent);
                 var dropdownBackground = VanillaSkin.Slice(_dropdownRoot,
                     VanillaSkin.ListBackground, PanelUi.PanelColor);
                 dropdownBackground.raycastTarget = true;
@@ -345,6 +346,7 @@ namespace QM_CentralManagement
             _popup = null;
             _root = null;
             _dropdownRoot = null;
+            _dropdownContent = null;
             _dropdownOriginalParent = null;
             _dropdownRows.Clear();
             _built = false;
@@ -577,37 +579,16 @@ namespace QM_CentralManagement
                 return;
             }
             RebuildDropdown();
-            RaiseDropdownToTop();
+            var overlay = (Transform)UI.ScreenRoot;
+            if (overlay == null && _root != null)
+                overlay = _root.transform.parent;
+            PanelUi.RaiseDropdown(_dropdownRoot, overlay,
+                ref _dropdownOriginalParent);
             _dropdownRoot.SetActive(true);
             _dropdownRoot.transform.SetAsLastSibling();
         }
 
         private Transform _dropdownOriginalParent;
-
-        /// <summary>
-        /// While open, the list moves to UI.ScreenRoot as its LAST child
-        /// (world position preserved), so it draws above the inventory window
-        /// it visually overlaps -- the bar itself sits at sibling 0 and would
-        /// otherwise leave its children underneath the window content.
-        /// </summary>
-        private void RaiseDropdownToTop()
-        {
-            if (_dropdownRoot == null || _dropdownOriginalParent != null)
-                return;
-            var screenRoot = UI.ScreenRoot;
-            if (screenRoot == null)
-                return;
-            _dropdownOriginalParent = _dropdownRoot.transform.parent;
-            var corners = new Vector3[4];
-            ((RectTransform)_dropdownRoot.transform).GetWorldCorners(corners);
-            var center = (corners[0] + corners[2]) * 0.5f;
-            _dropdownRoot.transform.SetParent(screenRoot,
-                worldPositionStays: false);
-            var rect = (RectTransform)_dropdownRoot.transform;
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.position = new Vector3(center.x, center.y, corners[0].z);
-        }
 
         /// <summary>One option of the selector, mode-independent.</summary>
         private sealed class DropdownItem
@@ -660,15 +641,24 @@ namespace QM_CentralManagement
             PanelUi.ClearDropdownRows(_dropdownRows);
             const float width = 200f;
             const float rowHeight = 17f;
-            var height = Mathf.Max(rowHeight + 4f,
-                items.Count * rowHeight + 4f);
+            const int maxVisible = 8;
+            var height = PanelUi.DropdownListHeight(items.Count, rowHeight,
+                maxVisible);
             PanelUi.SetTopLeft((RectTransform)_dropdownRoot.transform,
                 SelectedLeft, -21f, width, height);
+            if (_dropdownContent != null)
+            {
+                _dropdownContent.sizeDelta = new Vector2(width - 2f,
+                    Mathf.Max(height - 2f, items.Count * rowHeight + 2f));
+                _dropdownContent.anchoredPosition = Vector2.zero;
+            }
+            var rowParent = (Transform)_dropdownContent
+                            ?? _dropdownRoot.transform;
             for (var i = 0; i < items.Count; i++)
             {
                 var item = items[i];
                 var row = PanelUi.CreateButtonRoot("Option" + i,
-                    _dropdownRoot.transform, 2f, -2f - i * rowHeight,
+                    rowParent, 2f, -2f - i * rowHeight,
                     width - 4f, rowHeight - 1f, out var background,
                     out var label);
                 label.text = item.Label;
@@ -692,14 +682,9 @@ namespace QM_CentralManagement
                 return;
             var wasVisible = dropdown.activeInHierarchy;
             dropdown.SetActive(false);
-            if (_dropdownOriginalParent != null)
-            {
-                dropdown.transform.SetParent(_dropdownOriginalParent,
-                    worldPositionStays: false);
-                PanelUi.SetTopLeft((RectTransform)dropdown.transform,
-                    SelectedLeft, -21f, 200f, 21f);
-                _dropdownOriginalParent = null;
-            }
+            PanelUi.LowerDropdown(dropdown, ref _dropdownOriginalParent);
+            PanelUi.SetTopLeft((RectTransform)dropdown.transform,
+                SelectedLeft, -21f, 200f, 21f);
             if (wasVisible)
                 ModInputGate.ConsumePointerRelease();
         }

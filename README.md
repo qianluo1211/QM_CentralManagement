@@ -4,7 +4,7 @@ A Quasimorph mod that turns the Magnum's separate storage bays into one searchab
 
 把飞船 1～7 号仓库、冷藏区和回收区整合成一个可搜索、可筛选、可排序、可直接配装与批量回收的中央终端；空间站贸易也换成中央管理风格的批量市场。
 
-**Current version / 当前版本：1.6.0** · [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3782793381)
+**Current version / 当前版本：1.6.1** · [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3782793381)
 
 ![Spaceship entry](workshop/screenshots_upload/01_spaceship_entry.jpg)
 
@@ -22,7 +22,7 @@ A Quasimorph mod that turns the Magnum's separate storage bays into one searchab
 The mod folder lives outside the game directory, so the path is the same no matter where you bought the game.
 mod 目录不在游戏安装目录里，所以无论从哪买的游戏，路径都一样。
 
-1. Download `QM_CentralManagement_v1.6.0.zip` from [Releases](../../releases/latest).
+1. Download `QM_CentralManagement_v1.6.1.zip` from [Releases](../../releases/latest).
 2. Extract it. You should end up with a folder named exactly `QM_CentralManagement` containing `modmanifest.json`, `QM_CentralManagement.dll`, `config.txt` and `assets/`.
 3. Move that folder into:
 

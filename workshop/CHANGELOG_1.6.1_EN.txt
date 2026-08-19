@@ -1,0 +1,8 @@
+[h1]Central Material Management 1.6.1 — loadout dropdown[/h1]
+
+[h2]Fix[/h2]
+[list]
+[*]The loadout dropdown only showed the two most recently saved presets. The rest were still stored: the list sat behind the equipment window, clipped to a two-row bar, so deleting one “revealed” an older name. The list now opens above the window and shows every preset; more than eight entries can be scrolled. Fixed on both the pre-departure strip and the central-management bar.
+[/list]
+
+[i]Version 1.6.1.[/i]

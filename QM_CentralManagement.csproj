@@ -6,7 +6,7 @@
     <RootNamespace>QM_CentralManagement</RootNamespace>
     <LangVersion>latest</LangVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AssemblyVersion>1.6.0.0</AssemblyVersion>
+    <AssemblyVersion>1.6.1.0</AssemblyVersion>
     <DebugType>none</DebugType>
     <!-- MSB3277: MCM.dll (net48) references System.IO.Compression 4.2.0.0
          while netstandard2.1 refs 4.1.3.0 and Unity ships its own 4.0.0.0
