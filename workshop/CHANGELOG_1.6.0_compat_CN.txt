@@ -1,0 +1,13 @@
+[h1]中央物资管理 — 兼容 Global Currency[/h1]
+
+空间站贸易面板现在能和 Traveler 的 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3621573271]Global Currency[/url] 一起用。
+
+[h2]兼容[/h2]
+[list]
+[*]以前两个 mod 一起开时，中央管理的交易窗读的是空间站阵营自己的钱。Global Currency 把钱都记在 Magnum 的全球货币上，所以窗口里经常是 0，交易按钮也按 0 来锁，什么都买不了。
+[*]现在会识别 Global Currency：余额显示、买得起判断、成交后的预览，都改读全球货币。
+[*]真正扣钱 / 入账本来就走游戏自己的交易接口，对方已经改过；这次只把中央管理自己画的交易窗对齐过去。没装 Global Currency 时行为完全不变。
+[*]尊重对方 MCM 里的「Public Enemy 不用全球货币」：打开后，拟态势力 / 民间抵抗仍用各自阵营的钱。
+[/list]
+
+[i]版本号仍是 1.6.0，这是兼容补丁。感谢工坊评论区 Drakal 等人的反馈。[/i]

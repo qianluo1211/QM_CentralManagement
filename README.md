@@ -91,3 +91,5 @@ Output lands in `bin/Release/`. To package, copy the dll next to `modmanifest.js
   from the Workshop comments.
 - Thanks to **Joe** for asking for a non-Steam download — that is why this repo
   now carries releases.
+- Global Currency compatibility was requested in the Workshop comments
+  (Drakal and others).

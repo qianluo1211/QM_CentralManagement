@@ -1,0 +1,13 @@
+[h1]Central Material Management — Global Currency compatibility[/h1]
+
+The station trade panel now works with Traveler's [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3621573271]Global Currency[/url].
+
+[h2]Compatibility[/h2]
+[list]
+[*]With both mods installed, our trade window used to read the station faction's own points. Global Currency keeps the money on Magnum's global wallet, so the header often showed 0 and TRADE stayed locked.
+[*]The panel now detects Global Currency: the header, the affordability check, and the running total all read the global wallet.
+[*]Buying and selling already went through the game's TradeSystem, which that mod already patches. This only lines up our own window. Without Global Currency, nothing changes.
+[*]Honours that mod's MCM option to keep Public Enemy factions on their own currency (Quasimorphic factions and Civil Resistance).
+[/list]
+
+[i]Still version 1.6.0 — this is a compatibility patch. Thanks to Drakal and others in the Workshop comments.[/i]

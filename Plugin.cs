@@ -73,6 +73,7 @@ namespace QM_CentralManagement
             try
             {
                 PatchGame();
+                GlobalCurrencyBridge.Warmup();
                 _ready = true;
                 Debug.Log(LogPrefix + "ready. Technology = " + TechId + ".");
                 RegisterWithMcm();

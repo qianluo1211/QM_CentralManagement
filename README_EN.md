@@ -12,6 +12,7 @@ QM Central Management turns the Magnum's separate storage bays into one searchab
 - Shortcuts: B switches panes, [ ] pages, D trades, Delete clears the cart, A selects all visible.
 - Barter exchanges are visible: delivering quest items (e.g. the AnCom data chip) shows a dialog listing exactly what the station handed back.
 - The panel rebuilds when the game language changes.
+- Optional compatibility with Traveler's Global Currency: when that mod is present the header and the affordability check read Magnum's global wallet; without it nothing changes. Honours that mod's MCM option to keep Public Enemy factions on their own currency.
 
 ## Mod Configuration Menu (1.5.0)
 
@@ -63,6 +64,7 @@ Cost:
 - Loads through the official Mod/Hook system and uses the Harmony library bundled with the game.
 - Standalone, with no required Workshop dependencies.
 - Optional integration with Crynano's Mod Configuration Menu.
+- Optional compatibility with Traveler's Global Currency on the station trade panel.
 
 ## Configuration
 

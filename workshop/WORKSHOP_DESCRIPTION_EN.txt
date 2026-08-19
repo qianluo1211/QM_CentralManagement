@@ -3,44 +3,43 @@
 [b]Stop opening storage bays 1 through 7 one by one. Turn the entire ship inventory into one searchable, sortable logistics terminal.[/b]
 
 [quote]
-Loadout presets are available from the very start: the preset bar above the agent equipment screen saves, switches, and applies full loadouts (augments and mechanical limbs included) with no technology required. Research the major Central Logistics Matrix technology in Supply to additionally unlock the central terminal: ship-wide indexing, agent loadout management, augmentation installation, and batch recycling in one workflow. Since 1.5.0 the technology also replaces the station trade screen with a central-management-style bulk market.
+Loadout presets are available from the start: the bar above the agent equipment screen saves, switches, and applies full loadouts (augments and mechanical limbs included) with no technology required. Research the major Central Logistics Matrix technology in Supply to unlock the central terminal. Since 1.5.0 that technology also replaces the station trade screen with a bulk market.
 [/quote]
 
 [h2]GOG and other non-Steam players[/h2]
-Quasimorph cannot install Workshop mods outside Steam, so every release is also published on GitHub:
+Every release is also on GitHub:
 [url=https://github.com/qianluo1211/QM_CentralManagement/releases/latest]github.com/qianluo1211/QM_CentralManagement/releases[/url]
-Download the zip, extract it, and move the resulting [b]QM_CentralManagement[/b] folder into [code]%USERPROFILE%\AppData\LocalLow\Magnum Scriptum Ltd\Quasimorph\LocalUserPresets\[/code] (create [b]LocalUserPresets[/b] if it is not there). The mod folder lives outside the game directory, so that path is the same no matter where you bought the game. Do not keep a manual copy and the Workshop version at once -- the game scans both and would load the mod twice.
+Download the zip, extract it, and move the [b]QM_CentralManagement[/b] folder into [code]%USERPROFILE%\AppData\LocalLow\Magnum Scriptum Ltd\Quasimorph\LocalUserPresets\[/code] (create [b]LocalUserPresets[/b] if needed). Do not keep a manual copy and the Workshop version at once.
 
 [h2]Quick Start[/h2]
 [olist]
-[*]Available immediately: save, switch, and apply loadouts from the bar above the agent equipment screen on the pre-departure screen—no technology required.
-[*]Research the major [b]Central Logistics Matrix[/b] technology directly below Recycling in the Supply technology tree.
-[*]Use the new spaceship button or press the default [b]C[/b] shortcut. The mission briefing carries the same entry, and the same shortcut.
-[*]Find items with search, categories, subcategories, and contextual sorting. Use the mouse wheel to change pages.
-[*]Open Agent Gear to manage the most recently deployed available agent; click the agent name for a direct dropdown.
-[*]Drag items between central storage and the agent. Right-click a stack and use the vanilla Split command to immediately pick up the exact chosen quantity.
-[*]With the game's Fast trade option enabled, visit a station to use the new bulk trade panel: buy and sell in one screen, one cart, one Trade button.
-[*]Built the cargo shuttle? Load its hold once, save it as a manifest, and it refills itself before every deployment.
+[*]Save, switch, and apply loadouts from the bar above the agent equipment screen — no technology required.
+[*]Research [b]Central Logistics Matrix[/b] below Recycling in the Supply tree.
+[*]Use the spaceship button or press [b]C[/b]. The mission briefing has the same entry and shortcut.
+[*]Search, filter, and sort. Mouse wheel changes pages.
+[*]Open Agent Gear for the most recently deployed available agent; click the name to switch.
+[*]Drag items between central storage and the agent. Right-click a stack and use vanilla Split to pick up an exact quantity.
+[*]With Fast trade enabled, visit a station for the bulk trade panel.
+[*]Built the cargo shuttle? Load it once, save a manifest, and it refills before every deployment.
 [/olist]
 
 [h2]Features[/h2]
 [list]
-[*][b]Station trade panel (1.5.0)[/b]: Replaces the vanilla station trade screen with a bulk market. The buy page lists the station's entire stock (consumables included), the sell page lists only items the station accepts and aggregates all your storages. One shared cart with a single Trade action sells first, then buys, with linked income / spending / balance totals—prices follow the vanilla formulas exactly. The wheel only pages; hold the left button and sweep across rows for bulk −/+/MAX with ×10/×100/×1000 modifiers and B / [ ] / D / Delete / A shortcuts. Quest deliveries (e.g. the AnCom data chip) show exactly what the station handed back, with item icons and hover cards.
-[*][b]Shuttle restock manifests (1.6.0)[/b]: The game empties the cargo shuttle's hold after every raid, so it is always empty before the next one. Save the hold as a named manifest and refill it in one click—or let it top up automatically as the raid launches, without opening the equipment screen at all. It only ever adds what is missing and never removes what you put there yourself. Items are sourced by the presets' own rules (cargo, then cold storage, then the recycler while idle; locked items skipped, best condition first, expiry preserved), and shortfalls or "no room left" are reported per line. Manage it from the pre-departure cargo shuttle tab or straight from the central panel, which can put the game's own shuttle hold grid in its left pane.
-[*][b]Ship-wide index[/b]: Aggregates storage bays 1-7, built cold storage, and currently available recycling storage.
-[*][b]Search and layered filters[/b]: Search localized names or internal IDs, then narrow Weapons, Equipment, Ammo, Ordnance, Supplies, Augments, Materials, Barter, and Special items by useful subtypes.
-[*][b]Responsive catalog[/b]: Uses almost the entire screen while gear is hidden, then automatically fits the remaining right side when the agent panel is open. One header dropdown names what the left pane is showing and switches between agent gear, the shuttle hold, augmentation, and hiding the pane entirely.
-[*][b]Direct agent management[/b]: Starts with the most recently deployed available agent, offers a name dropdown, and supports two-way drag-and-drop with equipment and backpack slots.
-[*][b]Complete loadout presets[/b]: Available from the very start on the pre-departure equipment screen—no technology required. Save named presets containing equipped weapons and armor, backpack and vest contents with exact quantities, mechanical body replacements, socket capacity, and installed implants, then apply them to any compatible available agent with one click. The central panel offers the same preset management, and so does the after-raid screen—applying a preset there is a selective unload: what the preset names stays on the agent, everything else goes to the hold.
-[*][b]Straight from the mission briefing[/b]: An entry on the briefing screen opens central management on the operator that briefing has already selected, with their gear expanded. Close it and you are back on the briefing ready to launch -- no leaving mission preparation and walking back to the ship.
-[*][b]One-click repair[/b]: Mends all of the selected agent's damaged gear at once, paid out of ship storage (kits the agent is carrying are left alone). Repair kits are spent before scrap parts, and nothing is ever repaired to destruction. It runs the game's own repair logic, so it raises the same repair proficiency and recomputes resists. Confirms first, then shows what was spent -- kits in uses, parts in items.
-[*][b]Safe partial application[/b]: The terminal checks every required item first. If only stock is missing, you may continue with available items: missing normal gear slots stay empty, unavailable carried items are skipped, and an incomplete body configuration leaves the current body intact.
-[*][b]Exact stack handling[/b]: The item icon keeps the original game's context menu. Confirming vanilla Split immediately places that exact stack on the cursor.
-[*][b]Contextual sorting[/b]: Sort ordinary items by name, quantity or tech level (tech level is available in every category); equipment by total or typed resistance; weapons by total or typed damage; ammunition by damage multiplier; and augments by real installation slot. Official armor-set grouping reads the game's ArmorSets data directly.
-[*][b]Augmentation workflow[/b]: Open the selected agent's original Augmentation body screen from the central catalog. Install commands keep all vanilla restrictions, replacement rules, item consumption, and stat refresh behavior.
-[*][b]Batch recycling[/b]: Left-click FULL for instant whole-type selection, right-click that same button for an exact unit count, select or clear the current filter, then confirm once more before recycling.
-[*][b]Safety checks[/b]: Disabled while the recycling bay is busy and automatically excludes locked, quest, hidden-weapon, non-recyclable, and already queued items.
-[*][b]Mouse-friendly controls[/b]: Wheel paging, wheel adjustment in the vanilla split slider, and click-through protection for dialogs and dropdowns.
+[*][b]Station trade panel[/b]: Replaces vanilla station trade. Buy lists the station's full stock; sell lists only what it accepts and aggregates your storages. One cart, one Trade button (sells first, then buys). Prices follow vanilla formulas. Wheel pages; hold left and sweep for bulk −/+/MAX (×10/×100/×1000). Shortcuts: B, [ ], D, Delete, A. Quest deliveries show what the station handed back, with item icons.
+[*][b]Shuttle restock manifests[/b]: The game empties the cargo shuttle after every raid. Save the hold as a named list and refill in one click, or let it top up automatically as the raid launches. It only adds what is missing. Manage it from the pre-departure shuttle tab or from the central panel.
+[*][b]Ship-wide index[/b]: Storage bays 1–7, built cold storage, and available recycling storage.
+[*][b]Search and filters[/b]: Names or internal IDs, then Weapons, Equipment, Ammo, Ordnance, Supplies, Augments, Materials, Barter, Special.
+[*][b]Responsive catalog[/b]: Nearly full-screen with gear hidden; fits the remaining right side when the agent pane is open. Header dropdown switches agent gear, shuttle hold, augmentation, or hidden.
+[*][b]Direct agent management[/b]: Last deployed available agent, name dropdown, two-way drag-and-drop.
+[*][b]Loadout presets[/b]: From the very start, no technology required. Weapons, armor, backpack and vest with exact counts, mechanical parts, socket capacity, and implants. Same tools in the central panel and on the after-raid screen (applying a preset there is a selective unload).
+[*][b]Mission briefing[/b]: Opens on the operator already selected, gear expanded. Close and you are back on the briefing.
+[*][b]One-click repair[/b]: Mends the selected agent's damaged gear from ship storage (kits they are carrying are left alone). Kits before scrap parts; nothing is repaired to destruction. Confirms first, then shows what was spent.
+[*][b]Safe partial application[/b]: If only stock is missing you may continue: empty slots stay empty, missing carried items are skipped, incomplete body configs leave the current body.
+[*][b]Exact stacks[/b]: Vanilla right-click Split puts that quantity on the cursor.
+[*][b]Contextual sorting[/b]: Name, quantity, or tech level (every category); equipment by resist; weapons by damage; ammo by multiplier; augments by installation slot. Armor sets read the game's ArmorSets data.
+[*][b]Augmentation[/b]: Open the selected agent's vanilla Augmentation screen from the catalog. Install rules stay vanilla.
+[*][b]Batch recycling[/b]: Left-click FULL for a whole type, right-click for an exact count. Disabled while the recycler is busy; skips locked, quest, hidden-weapon, non-recyclable, and already queued items.
+[*][b]Mouse[/b]: Wheel paging, wheel on the split slider, click-through protection for dialogs and dropdowns.
 [/list]
 
 [h2]Research Cost[/h2]
@@ -54,10 +53,10 @@ Download the zip, extract it, and move the resulting [b]QM_CentralManagement[/b]
 [h2]Compatibility[/h2]
 [list]
 [*]Quasimorph 1.0 / 1.0.1 / 1.0.2
-[*]Loads through the official Mod/Hook system and uses the Harmony library bundled with the game.
-[*]Standalone, with no required Workshop dependencies.
-[*]Optional integration with Crynano's [b]Mod Configuration Menu[/b]: when subscribed, this mod's options appear in the in-game mod settings page, in Chinese or English.
-[*]Includes single-click throttling for compatibility with Ctrl-click batch-drag mods and does not alter the vanilla cargo layout.
+[*]Official Mod/Hook system and the game's bundled Harmony. No required Workshop dependencies.
+[*]Optional: Crynano's [b]Mod Configuration Menu[/b] for in-game settings (Chinese or English).
+[*]Optional: Traveler's [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3621573271]Global Currency[/url] — the station trade panel displays and spends the global Magnum wallet.
+[*]Single-click throttling for Ctrl-click batch-drag mods. Does not change vanilla cargo layout.
 [/list]
 
 [h2]Configuration[/h2]
@@ -74,6 +73,6 @@ quantityShiftStep=10
 quantityCtrlStep=100
 quantityCtrlShiftStep=1000[/code]
 
-Set [code]shortcutKey=None[/code] to disable the spaceship shortcut, or use another Unity KeyCode name. A full game restart is recommended after editing the file. With Mod Configuration Menu subscribed, raidPrepCentral, stationTrade, tradeConfirm, autoUnlockTech, shuttleManifests, and shuttleAutoRestock can also be changed from the in-game mod settings page.
+[code]shortcutKey=None[/code] disables the spaceship shortcut. Restart the game after editing the file. With MCM subscribed, the main flags can also be changed in-game.
 
 [b]Version: 1.6.0[/b]

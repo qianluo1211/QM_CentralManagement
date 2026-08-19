@@ -2492,6 +2492,18 @@ namespace QM_CentralManagement
         }
 
         /// <summary>
+        /// Points this station currently spends. Vanilla stores them on the
+        /// owner faction; Global Currency (when installed) stores them on
+        /// Magnum instead. Buy/Sell already go through TradeSystem, which
+        /// that mod patches -- this is only the display and the "can I
+        /// afford this" check.
+        /// </summary>
+        private int WalletPoints()
+        {
+            return GlobalCurrencyBridge.GetTradePoints(_factions, _faction);
+        }
+
+        /// <summary>
         /// The header trade-points readout: the game's own ExchangeView shows
         /// "points (+delta)", where the delta is the combined cart -- sell
         /// earnings minus purchase costs, on both panes.
@@ -2500,7 +2512,7 @@ namespace QM_CentralManagement
         {
             if (_faction == null)
                 return;
-            var points = _faction.PlayerTradePoints;
+            var points = WalletPoints();
             if (_exchangeView != null)
             {
                 _exchangeView.RefreshValue(points, delta);
@@ -2548,13 +2560,13 @@ namespace QM_CentralManagement
             }
             var buyTotal = _cachedBuyTotal;
             var sellEstimate = _cachedSellEstimate;
+            var wallet = WalletPoints();
 
-            var after = _faction.PlayerTradePoints + sellEstimate - buyTotal;
+            var after = wallet + sellEstimate - buyTotal;
             var hasSell = _canSell && _sellWallet.Count > 0;
             var hasBuy = _canTrade && _buyWallet.Count > 0;
             var cartEmpty = !hasSell && !hasBuy;
-            var affordable = _faction.PlayerTradePoints + sellEstimate
-                             >= buyTotal;
+            var affordable = wallet + sellEstimate >= buyTotal;
 
             var color = cartEmpty
                 ? PanelUi.OffColor
@@ -2790,8 +2802,7 @@ namespace QM_CentralManagement
             }
             // Sells are completed first, so their earnings can pay for the
             // purchases in the same trade.
-            if (hasBuy
-                && _faction.PlayerTradePoints + sellEstimate < buyTotal)
+            if (hasBuy && WalletPoints() + sellEstimate < buyTotal)
             {
                 PlayEmptyAttack();
                 return;
@@ -2866,7 +2877,7 @@ namespace QM_CentralManagement
         {
             try
             {
-                var pointsBefore = _faction.PlayerTradePoints;
+                var pointsBefore = WalletPoints();
                 var items = TradeSystem.BuyStationItems(_progression, _factions,
                     _itemsPrices, _statistics, _station, _buyWallet);
                 foreach (var item in items)
@@ -2879,7 +2890,7 @@ namespace QM_CentralManagement
                     PlayTakeItemSound();
                     Plugin.DebugLog("station trade bought "
                                     + items.Count + " stacks for "
-                                    + (pointsBefore - _faction.PlayerTradePoints)
+                                    + (pointsBefore - WalletPoints())
                                     + " points.");
                 }
             }
